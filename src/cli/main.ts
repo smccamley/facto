@@ -3,8 +3,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { loadFactoEnv } from "../shared/envFile.js";
 import type { CreateJobInput, SubmitTarget } from "../shared/jobTypes.js";
+import { setupProject } from "./projectSetup.js";
 
-loadFactoEnv([".facto/controller.env"]);
+loadFactoEnv([".expofacto/secrets.env", ".facto/controller.env"]);
 
 type CliOptions = Record<string, string | boolean>;
 
@@ -41,11 +42,13 @@ const getOption = (options: CliOptions, key: string) => {
 };
 
 const readFactoConfig = () => {
-  if (!existsSync("facto.yml")) {
+  const path = existsSync(".expofacto/config.yml") ? ".expofacto/config.yml" : "facto.yml";
+
+  if (!existsSync(path)) {
     return {};
   }
 
-  return parseYaml(readFileSync("facto.yml", "utf8")) as Record<string, unknown>;
+  return parseYaml(readFileSync(path, "utf8")) as Record<string, unknown>;
 };
 
 const requireValue = (value: string | undefined, name: string) => {
@@ -57,6 +60,14 @@ const requireValue = (value: string | undefined, name: string) => {
 };
 
 const toSubmitTarget = (value: string | undefined): SubmitTarget => (value === "testflight" ? "testflight" : "none");
+
+const toChecks = (value: unknown) => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.filter((check): check is string => typeof check === "string");
+};
 
 const createJobInput = (options: CliOptions): CreateJobInput => {
   const config = readFactoConfig();
@@ -71,7 +82,8 @@ const createJobInput = (options: CliOptions): CreateJobInput => {
     gitRef: getOption(options, "ref") ?? String(repo.defaultRef ?? "main"),
     appPath: getOption(options, "path") ?? String(app.path ?? "."),
     profile: getOption(options, "profile") ?? String(ios.profile ?? "production"),
-    submit: toSubmitTarget(getOption(options, "submit")),
+    submit: toSubmitTarget(getOption(options, "submit") ?? String(ios.submit ?? "")),
+    checks: toChecks(config.checks),
     triggerSource: "cli",
   };
 };
@@ -95,9 +107,29 @@ const postJob = async (controllerUrl: string, token: string, input: CreateJobInp
 
 const main = async () => {
   const { positional, options } = parseArgs(process.argv.slice(2));
+  const command = positional[0];
 
-  if (positional[0] !== "build" || positional[1] !== "ios") {
-    throw new Error("Usage: facto build ios --project NAME --repo URL --ref main --path packages/app --profile production");
+  if (command === "setup") {
+    const result = setupProject();
+
+    for (const path of result.created) {
+      console.log(`created ${path}`);
+    }
+
+    for (const path of result.updated) {
+      console.log(`updated ${path}`);
+    }
+
+    if (result.missing.length > 0) {
+      console.log(`fill in ${result.missing.join(", ")} in .expofacto/secrets.env`);
+    }
+
+    console.log("deploy with npm run deploy or .expofacto/deploy.sh");
+    return;
+  }
+
+  if (command !== "deploy" && (positional[0] !== "build" || positional[1] !== "ios")) {
+    throw new Error("Usage: expofacto setup | expofacto deploy | expofacto build ios");
   }
 
   const controllerUrl = requireValue(getOption(options, "controller-url") ?? process.env.FACTO_CONTROLLER_URL, "controller-url");

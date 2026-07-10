@@ -1,13 +1,21 @@
 {
-  "name": "facto",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@expofacto/expofacto",
+  "version": "0.1.1",
   "type": "module",
+  "files": [
+    "dist",
+    "scripts/postinstall.cjs",
+    "README.md",
+    "docs"
+  ],
   "bin": {
-    "facto": "./dist/cli/main.js"
+    "expofacto": "dist/cli/main.js",
+    "facto": "dist/cli/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "postinstall": "node scripts/postinstall.cjs",
     "dev:controller": "tsx src/controller/server.ts",
     "dev:worker": "tsx src/worker/main.ts",
     "facto": "tsx src/cli/main.ts",

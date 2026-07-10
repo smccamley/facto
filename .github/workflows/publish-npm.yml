@@ -1,0 +1,54 @@
+name: Publish npm package
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Set publish version
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          BASE_VERSION="$(node -p "require('./package.json').version")"
+          NEXT_VERSION="$(BASE_VERSION="$BASE_VERSION" node -e "
+          const [major, minor, patchText = '0'] = process.env.BASE_VERSION.split('.');
+          const patch = Number(patchText.split('-')[0]);
+          const runNumber = Number(process.env.GITHUB_RUN_NUMBER);
+          const runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+          console.log([major, minor, patch + runNumber * 10 + runAttempt].join('.'));
+          " )"
+          npm version "$NEXT_VERSION" --no-git-tag-version
+          echo "Publishing $NEXT_VERSION"
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_EXPOFACTO }}
+        run: npm publish --access public

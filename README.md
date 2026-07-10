@@ -2,6 +2,42 @@
 
 Facto is a small controller, worker, and CLI for running Expo/EAS iOS builds on Mac hardware we control.
 
+## App Repo Usage
+
+Install the package in the Expo app repo:
+
+```bash
+npm install @expofacto/expofacto
+```
+
+Install creates `.expofacto/deploy.sh`, adds safe ignore rules for local secrets and artifacts, and adds package scripts when they do not already exist.
+
+Run setup:
+
+```bash
+npm run setup
+```
+
+Setup creates:
+
+- `.expofacto/config.yml`
+- `.expofacto/secrets.env`
+- `.expofacto/deploy.sh`
+
+It copies known values from the shell, `.env`, or `.env.local` into `.expofacto/secrets.env`. Fill any missing `FACTO_CONTROLLER_URL`, `FACTO_API_TOKEN`, and `EXPO_TOKEN` values before deploying.
+
+Deploy:
+
+```bash
+npm run deploy
+```
+
+You can also run the CLI directly:
+
+```bash
+npx expofacto build ios
+```
+
 ## Local MVP
 
 Install dependencies:
