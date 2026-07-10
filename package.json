@@ -1,0 +1,31 @@
+{
+  "name": "facto",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "facto": "./dist/cli/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev:controller": "tsx src/controller/server.ts",
+    "dev:worker": "tsx src/worker/main.ts",
+    "facto": "tsx src/cli/main.ts",
+    "setup:github-key": "bash scripts/setup-github-deploy-key.sh",
+    "setup:local": "bash scripts/setup-local.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.14",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
