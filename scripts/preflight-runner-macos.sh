@@ -11,7 +11,7 @@ usage() {
 Usage: preflight-runner-macos.sh --manifest docs/runner-toolchain.md [-V|--verbose] [--check-only]
 
 Checks the macOS runner toolchain against the Markdown manifest and installs or
-upgrades managed tools where possible.
+upgrades tools where possible. macOS and Xcode installs can take a long time.
 EOF
 }
 
@@ -198,6 +198,15 @@ configure_managed_paths() {
   [[ -n "$ruby_prefix" ]] && prepend_path_once "$ruby_prefix/bin"
 }
 
+run_sudo() {
+  if [[ "$(id -u)" == "0" ]]; then
+    "$@"
+    return $?
+  fi
+
+  sudo "$@"
+}
+
 brew_install_or_upgrade() {
   local package_name="$1"
 
@@ -222,6 +231,101 @@ brew_install_or_upgrade() {
   fi
 
   configure_managed_paths
+}
+
+install_macos_updates() {
+  [[ "$CHECK_ONLY" == "0" ]] || return 0
+
+  log "Installing all available macOS software updates. The machine may restart if Apple requires it..."
+  run_sudo softwareupdate --install --all --restart
+}
+
+install_xcode_command_line_tools() {
+  [[ "$CHECK_ONLY" == "0" ]] || return 0
+
+  if xcode-select -p >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log "Installing Xcode Command Line Tools..."
+  touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+
+  local label
+  label="$(softwareupdate --list 2>/dev/null | awk -F'* ' '/Command Line Tools/ {print $2}' | tail -n 1)"
+
+  if [[ -n "$label" ]]; then
+    run_sudo softwareupdate --install "$label"
+  else
+    xcode-select --install || true
+  fi
+
+  rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+}
+
+ensure_xcodes() {
+  if command -v xcodes >/dev/null 2>&1; then
+    debug "xcodes found at $(command -v xcodes)"
+    return 0
+  fi
+
+  [[ "$CHECK_ONLY" == "0" ]] || fail "xcodes is missing."
+
+  ensure_homebrew
+  configure_managed_paths
+
+  log "Installing xcodes and aria2 with Homebrew..."
+  brew install xcodesorg/made/xcodes aria2
+  configure_managed_paths
+
+  command -v xcodes >/dev/null 2>&1 || fail "xcodes install completed but xcodes is not on PATH."
+}
+
+selected_xcode_developer_dir() {
+  xcode-select -p 2>/dev/null || true
+}
+
+select_installed_xcode() {
+  local required_version="$1"
+  local developer_dir
+  local app_path
+
+  developer_dir="$(selected_xcode_developer_dir)"
+
+  if [[ "$developer_dir" == *"/Xcode-${required_version}.app/Contents/Developer" || "$developer_dir" == "/Applications/Xcode.app/Contents/Developer" ]]; then
+    return 0
+  fi
+
+  app_path="/Applications/Xcode-${required_version}.app"
+
+  if [[ ! -d "$app_path" && -d "/Applications/Xcode.app" ]]; then
+    app_path="/Applications/Xcode.app"
+  fi
+
+  [[ -d "$app_path" ]] || return 1
+
+  log "Selecting $app_path..."
+  run_sudo xcode-select -s "$app_path/Contents/Developer"
+}
+
+install_or_update_xcode() {
+  local required_version="$1"
+
+  [[ "$CHECK_ONLY" == "0" ]] || return 0
+
+  ensure_xcodes
+
+  if [[ -z "${XCODES_USERNAME:-}" ]]; then
+    log "XCODES_USERNAME is not set. xcodes may use a saved Apple ID or prompt for credentials."
+  fi
+
+  log "Installing Xcode $required_version with xcodes. This can take a long time..."
+  xcodes install "$required_version" --select --experimental-unxip || xcodes install "$required_version" --select
+
+  select_installed_xcode "$required_version" || true
+
+  log "Running Xcode first-launch tasks and accepting the license..."
+  run_sudo xcodebuild -runFirstLaunch
+  run_sudo xcodebuild -license accept
 }
 
 require_command_version() {
@@ -281,19 +385,29 @@ require_xcode() {
   local actual_version
 
   required_version="$(manifest_value xcodebuild version)"
+  install_xcode_command_line_tools
 
   if ! command -v xcodebuild >/dev/null 2>&1; then
-    fail "Xcode is missing. Install Xcode $required_version from Apple Developer Downloads or the App Store, then run sudo xcode-select -s /Applications/Xcode.app/Contents/Developer."
+    install_or_update_xcode "$required_version"
   fi
+
+  command -v xcodebuild >/dev/null 2>&1 || fail "xcodebuild is still missing after attempting to install Xcode $required_version."
 
   actual_version="$(xcodebuild -version | awk '/Xcode/ {print $2; exit}')"
 
   if ! version_at_least "$actual_version" "$required_version"; then
-    fail "Xcode is $actual_version, expected at least $required_version. Update Xcode before starting the runner."
+    install_or_update_xcode "$required_version"
+    actual_version="$(xcodebuild -version | awk '/Xcode/ {print $2; exit}')"
+  fi
+
+  if ! version_at_least "$actual_version" "$required_version"; then
+    fail "Xcode is $actual_version after install, expected at least $required_version. Check xcodes output and selected developer directory: $(selected_xcode_developer_dir)"
   fi
 
   if ! xcodebuild -license check >/dev/null 2>&1; then
-    fail "Xcode license has not been accepted. Run sudo xcodebuild -license accept."
+    [[ "$CHECK_ONLY" == "0" ]] || fail "Xcode license has not been accepted. Run sudo xcodebuild -license accept."
+    log "Accepting Xcode license..."
+    run_sudo xcodebuild -license accept
   fi
 
   log "ok xcodebuild $actual_version"
@@ -370,11 +484,16 @@ run_check_for_id() {
       required_version="$(manifest_value macos version)"
       actual_version="$(sw_vers -productVersion)"
 
-      if version_at_least "$actual_version" "$required_version"; then
-        log "ok macos $actual_version"
-      else
-        fail "macOS is $actual_version, expected at least $required_version."
+      if ! version_at_least "$actual_version" "$required_version"; then
+        install_macos_updates
+        actual_version="$(sw_vers -productVersion)"
       fi
+
+      if ! version_at_least "$actual_version" "$required_version"; then
+        fail "macOS is $actual_version, expected at least $required_version after installing available updates."
+      fi
+
+      log "ok macos $actual_version"
       ;;
     homebrew)
       ensure_homebrew

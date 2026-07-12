@@ -122,7 +122,7 @@ FACTO_API_KEY=<your-api-key>
 npx --package @expofacto/cli expofacto start runner --api-key "$FACTO_API_KEY" --verbose
 ```
 
-`expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs or upgrades managed Homebrew/npm tools, verifies GitHub access, Xcode, the iOS SDK, and App Store Connect credentials, then stops early with a clear error if the runner is not ready. Use `-V` or `--verbose` to mirror redacted build output to the runner terminal as well as the controller logs.
+`expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs or upgrades Homebrew/npm tools, macOS updates, and Xcode, verifies GitHub access, the iOS SDK, and App Store Connect credentials, then stops early with a clear error only when the runner cannot repair itself. Set `XCODES_USERNAME` and `XCODES_PASSWORD` for unattended Xcode installs. Use `-V` or `--verbose` to mirror redacted build output to the runner terminal as well as the controller logs.
 
 Open `http://localhost:4100` for the operational status page.
 
