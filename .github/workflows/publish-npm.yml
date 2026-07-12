@@ -3,11 +3,12 @@ name: Publish npm package
 on:
   push:
     branches:
-      - "**"
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -28,6 +29,9 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Test
+        run: npm test
 
       - name: Build
         run: npm run build
@@ -51,4 +55,4 @@ jobs:
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_EXPOFACTO }}
-        run: npm publish --access public
+        run: npm publish --access public --provenance

@@ -1,8 +1,24 @@
 {
   "name": "@expofacto/cli",
   "version": "0.1.1",
-  "description": "Run Expo/EAS iOS builds on Mac hardware you control.",
+  "description": "Self-host Expo EAS iOS builds on Mac hardware you control.",
+  "license": "MIT",
   "type": "module",
+  "types": "dist/shared/jobTypes.d.ts",
+  "keywords": [
+    "expo",
+    "expo-build",
+    "eas",
+    "eas-build",
+    "react-native",
+    "ios",
+    "testflight",
+    "app-store-connect",
+    "self-hosted",
+    "macos",
+    "ci",
+    "cli"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/smccamley/facto.git"
@@ -17,6 +33,12 @@
     "README.md",
     "docs"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/shared/jobTypes.d.ts",
+      "default": "./dist/shared/jobTypes.js"
+    }
+  },
   "bin": {
     "expofacto": "dist/cli/main.js",
     "facto": "dist/cli/main.js"
@@ -30,6 +52,7 @@
     "facto": "tsx src/cli/main.ts",
     "setup:github-key": "bash scripts/setup-github-deploy-key.sh",
     "setup:local": "bash scripts/setup-local.sh",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
