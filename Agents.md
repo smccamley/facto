@@ -1,5 +1,10 @@
 # AGENTS.md
 
+# Deploy Commit Push and Pull
+
+Use GITHUB_PERSONAL_ACCESS_TOKEN in .env
+use NPM_TOKEN_EXPOFACTO in .env
+
 # Personal response style
 
 - Answer directly.
@@ -38,6 +43,14 @@
 - Follow YAGNI.
 - Files should rarely if ever have more than 200 lines in them
 - don't spread styles around the app, leave them close to where they are used, always
+
+## Cross-repo contract changes
+
+- Treat the npm package, CLI commands, hosted API, dashboard copy, generated setup scripts, and docs as one product contract.
+- If a CLI command, npm package name, bin name, API route, auth token name, request shape, response shape, or runner lifecycle behavior changes, do a full walkthrough of `facto-cli` and `facto-infrastructure`.
+- Update every affected surface in the same change: dashboard onboarding text, README examples, use-case docs, generated scripts, tests, API handlers, and package metadata.
+- Verify copy-paste commands from a clean shell shape, not only from local source.
+- Do not finish or describe the work as published/deployed until npm registry state, dashboard text, and docs agree.
 
 ## Components and styling
 
