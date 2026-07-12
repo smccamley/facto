@@ -1,5 +1,5 @@
 {
-  "name": "@expofacto/cli",
+  "name": "expofacto",
   "version": "0.1.1",
   "description": "Self-host Expo EAS iOS builds on Mac hardware you control.",
   "license": "MIT",

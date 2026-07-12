@@ -7,7 +7,7 @@ Expo Facto runs a controller and one or more Mac workers. The CLI submits a buil
 ## Install in an Expo app
 
 ```bash
-npm install @expofacto/cli
+npm install expofacto
 npm run setup
 ```
 

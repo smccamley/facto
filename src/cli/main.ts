@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { parse as parseYaml } from "yaml";
 import { loadFactoEnv } from "../shared/envFile.js";
 import type { CreateJobInput, SubmitTarget } from "../shared/jobTypes.js";
 import { setupProject } from "./projectSetup.js";
+import { runJob } from "../worker/runJob.js";
+import { createHostedRunnerClient } from "../worker/hostedClient.js";
 
 loadFactoEnv([".expofacto/secrets.env", ".facto/controller.env"]);
 
@@ -59,6 +62,10 @@ const requireValue = (value: string | undefined, name: string) => {
   return value;
 };
 
+const sleep = async (milliseconds: number) => {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+};
+
 const toSubmitTarget = (value: string | undefined): SubmitTarget => (value === "testflight" ? "testflight" : "none");
 
 const toChecks = (value: unknown) => {
@@ -105,6 +112,27 @@ const postJob = async (controllerUrl: string, token: string, input: CreateJobInp
   return (await response.json()) as { job: { id: string }; url: string };
 };
 
+const startHostedRunner = async (options: CliOptions) => {
+  const apiKey = requireValue(getOption(options, "api-key") ?? process.env.FACTO_API_KEY, "api-key");
+  const serviceUrl = getOption(options, "service-url") ?? getOption(options, "url") ?? process.env.FACTO_SERVICE_URL ?? "https://expofacto.dev";
+  const runnerName = getOption(options, "name") ?? process.env.FACTO_RUNNER_NAME ?? hostname();
+  const workspaceRoot = getOption(options, "workspace") ?? process.env.FACTO_WORKSPACE_ROOT ?? ".facto-runner/workspaces";
+  const pollIntervalMs = Number(getOption(options, "poll-interval-ms") ?? process.env.FACTO_POLL_INTERVAL_MS ?? 5000);
+  const { runner, client } = await createHostedRunnerClient({ serviceUrl, apiKey, runnerName });
+
+  console.log(`Facto runner ${runner.name} polling ${serviceUrl}`);
+
+  while (true) {
+    const job = await client.leaseJob();
+
+    if (job) {
+      await runJob(client, job, workspaceRoot);
+    }
+
+    await sleep(pollIntervalMs);
+  }
+};
+
 const main = async () => {
   const { positional, options } = parseArgs(process.argv.slice(2));
   const command = positional[0];
@@ -128,8 +156,13 @@ const main = async () => {
     return;
   }
 
+  if (command === "start" && (positional[1] === "runner" || positional[1] === "worker")) {
+    await startHostedRunner(options);
+    return;
+  }
+
   if (command !== "deploy" && (positional[0] !== "build" || positional[1] !== "ios")) {
-    throw new Error("Usage: expofacto setup | expofacto deploy | expofacto build ios");
+    throw new Error("Usage: expofacto setup | expofacto deploy | expofacto build ios | expofacto start runner");
   }
 
   const controllerUrl = requireValue(getOption(options, "controller-url") ?? process.env.FACTO_CONTROLLER_URL, "controller-url");
