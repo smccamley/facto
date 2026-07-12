@@ -28,8 +28,8 @@
   },
   "homepage": "https://github.com/smccamley/facto#readme",
   "files": [
+    "bin",
     "dist",
-    "scripts/check-node.cjs",
     "scripts/postinstall.cjs",
     "README.md",
     "docs"
@@ -41,12 +41,11 @@
     }
   },
   "bin": {
-    "expofacto": "dist/cli/main.js",
-    "facto": "dist/cli/main.js"
+    "expofacto": "bin/expofacto.cjs",
+    "facto": "bin/expofacto.cjs"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "preinstall": "node scripts/check-node.cjs",
     "prepack": "npm run build",
     "postinstall": "node scripts/postinstall.cjs",
     "dev:controller": "tsx src/controller/server.ts",
@@ -58,7 +57,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "express": "^5.1.0",
+    "express": "^4.21.2",
     "yaml": "^2.8.0"
   },
   "devDependencies": {
