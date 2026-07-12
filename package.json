@@ -30,7 +30,7 @@
   "files": [
     "bin",
     "dist",
-    "scripts/postinstall.cjs",
+    "scripts",
     "README.md",
     "docs"
   ],
@@ -50,6 +50,7 @@
     "postinstall": "node scripts/postinstall.cjs",
     "dev:controller": "tsx src/controller/server.ts",
     "dev:worker": "tsx src/worker/main.ts",
+    "preflight:runner": "bash scripts/preflight-runner-macos.sh --manifest docs/runner-toolchain.md",
     "facto": "tsx src/cli/main.ts",
     "setup:github-key": "bash scripts/setup-github-deploy-key.sh",
     "setup:local": "bash scripts/setup-local.sh",

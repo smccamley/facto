@@ -107,14 +107,22 @@ Run a worker in another terminal:
 FACTO_ENV_FILE=.facto/worker.env npm run dev:worker
 ```
 
+Run the macOS runner preflight by itself:
+
+```bash
+npm run preflight:runner -- --verbose
+```
+
 Run a hosted macOS runner from a clean machine:
 
 ```bash
 mkdir -p ~/facto-runner
 cd ~/facto-runner
 FACTO_API_KEY=<your-api-key>
-npx --package @expofacto/cli expofacto start runner --api-key "$FACTO_API_KEY"
+npx --package @expofacto/cli expofacto start runner --api-key "$FACTO_API_KEY" --verbose
 ```
+
+`expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs or upgrades managed Homebrew/npm tools, verifies GitHub access, Xcode, the iOS SDK, and App Store Connect credentials, then stops early with a clear error if the runner is not ready. Use `-V` or `--verbose` to mirror redacted build output to the runner terminal as well as the controller logs.
 
 Open `http://localhost:4100` for the operational status page.
 

@@ -7,6 +7,7 @@ import type { CreateJobInput, SubmitTarget } from "../shared/jobTypes.js";
 import { setupProject } from "./projectSetup.js";
 import { runJob } from "../worker/runJob.js";
 import { createHostedRunnerClient } from "../worker/hostedClient.js";
+import { runRunnerPreflight } from "../worker/preflight.js";
 
 loadFactoEnv([".expofacto/secrets.env", ".facto/controller.env"]);
 
@@ -26,6 +27,11 @@ const parseArgs = (args: string[]) => {
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+
+    if (arg === "-V") {
+      options.verbose = true;
+      continue;
+    }
 
     if (!arg.startsWith("--")) {
       positional.push(arg);
@@ -51,6 +57,8 @@ const getOption = (options: CliOptions, key: string) => {
   const value = options[key];
   return typeof value === "string" ? value : undefined;
 };
+
+const getBooleanOption = (options: CliOptions, key: string) => options[key] === true;
 
 const readFactoConfig = () => {
   const path = existsSync(".expofacto/config.yml") ? ".expofacto/config.yml" : "facto.yml";
@@ -126,6 +134,10 @@ const startHostedRunner = async (options: CliOptions) => {
   const runnerName = getOption(options, "name") ?? process.env.FACTO_RUNNER_NAME ?? hostname();
   const workspaceRoot = getOption(options, "workspace") ?? process.env.FACTO_WORKSPACE_ROOT ?? ".facto-runner/workspaces";
   const pollIntervalMs = Number(getOption(options, "poll-interval-ms") ?? process.env.FACTO_POLL_INTERVAL_MS ?? 5000);
+  const verbose = getBooleanOption(options, "verbose") || process.env.FACTO_VERBOSE === "1";
+
+  runRunnerPreflight({ verbose });
+
   const { runner, client } = await createHostedRunnerClient({ serviceUrl, apiKey, runnerName });
 
   console.log(`Facto runner ${runner.name} polling ${serviceUrl}`);
@@ -134,7 +146,9 @@ const startHostedRunner = async (options: CliOptions) => {
     const job = await client.leaseJob();
 
     if (job) {
-      await runJob(client, job, workspaceRoot);
+      await runJob(client, job, workspaceRoot, { verbose });
+    } else if (verbose) {
+      console.log(`No job available; polling again in ${pollIntervalMs}ms`);
     }
 
     await sleep(pollIntervalMs);
@@ -171,7 +185,7 @@ const main = async () => {
   }
 
   if (command !== "deploy" && (positional[0] !== "build" || positional[1] !== "ios")) {
-    throw new Error("Usage: expofacto setup | expofacto deploy | expofacto build ios | expofacto start runner");
+    throw new Error("Usage: expofacto setup | expofacto deploy | expofacto build ios | expofacto start runner [-V|--verbose]");
   }
 
   const controllerUrl = requireValue(getOption(options, "controller-url") ?? process.env.FACTO_CONTROLLER_URL, "controller-url");

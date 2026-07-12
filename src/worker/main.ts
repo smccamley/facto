@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { loadFactoEnv } from "../shared/envFile.js";
 import { createControllerClient } from "./controllerClient.js";
 import { runJob } from "./runJob.js";
+import { runRunnerPreflight } from "./preflight.js";
 
 loadFactoEnv([".facto/worker.env", "/opt/facto/secrets/worker.env"]);
 
@@ -10,6 +11,7 @@ const workerToken = process.env.FACTO_WORKER_TOKEN;
 const workerName = process.env.FACTO_WORKER_NAME;
 const workspaceRoot = process.env.FACTO_WORKSPACE_ROOT ?? ".facto-worker/workspaces";
 const pollIntervalMs = Number(process.env.FACTO_POLL_INTERVAL_MS ?? 5000);
+const verbose = process.env.FACTO_VERBOSE === "1" || process.argv.includes("--verbose") || process.argv.includes("-V");
 
 if (!controllerUrl || !workerToken || !workerName) {
   throw new Error("FACTO_CONTROLLER_URL, FACTO_WORKER_TOKEN, and FACTO_WORKER_NAME are required");
@@ -40,6 +42,8 @@ const sendHeartbeatUntilStopped = (jobId: string) => {
 };
 
 const workLoop = async () => {
+  runRunnerPreflight({ verbose });
+
   console.log(`Facto worker ${workerName} polling ${controllerUrl}`);
 
   while (true) {
@@ -51,7 +55,7 @@ const workLoop = async () => {
     }
 
     const stopHeartbeat = sendHeartbeatUntilStopped(job.id);
-    await runJob(client, job, workspaceRoot);
+    await runJob(client, job, workspaceRoot, { verbose });
     stopHeartbeat();
   }
 };

@@ -48,6 +48,7 @@ cat <<EOF
 
 Fill in $WORKER_ENV, then run:
 
+  FACTO_ENV_FILE=$WORKER_ENV npm run preflight:runner -- --verbose
   FACTO_ENV_FILE=$WORKER_ENV npm run dev:worker
 
 For launchd, point the service at a wrapper that exports FACTO_ENV_FILE=$WORKER_ENV

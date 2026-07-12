@@ -5,6 +5,10 @@ import type { BuildJob } from "../shared/jobTypes.js";
 import type { ControllerClient } from "./controllerClient.js";
 import { runCommand } from "./runCommand.js";
 
+type RunJobOptions = {
+  verbose?: boolean;
+};
+
 const commandForShell = (command: string) => {
   const [name, ...args] = command.split(" ").filter(Boolean);
   return { name, args };
@@ -17,7 +21,8 @@ const runStep = async (
   cwd: string,
   command: string,
   args: string[],
-  env?: NodeJS.ProcessEnv
+  env?: NodeJS.ProcessEnv,
+  options: RunJobOptions = {}
 ) => {
   const latestJob = await client.getJob(job.id);
 
@@ -26,7 +31,7 @@ const runStep = async (
   }
 
   await client.sendEvent(job.id, { type: "step.started", step });
-  const exitCode = await runCommand({ jobId: job.id, step, command, args, cwd, env, client });
+  const exitCode = await runCommand({ jobId: job.id, step, command, args, cwd, env, client, verbose: options.verbose });
   const status = exitCode === 0 ? "complete" : "failed";
   await client.sendEvent(job.id, { type: "step.finished", step, status, exitCode });
 
@@ -35,17 +40,17 @@ const runStep = async (
   }
 };
 
-const checkoutRepo = async (client: ControllerClient, job: BuildJob, repoPath: string) => {
+const checkoutRepo = async (client: ControllerClient, job: BuildJob, repoPath: string, options: RunJobOptions = {}) => {
   const parentPath = resolve(repoPath, "..");
   mkdirSync(parentPath, { recursive: true });
 
   if (!existsSync(join(repoPath, ".git"))) {
-    await runStep(client, job, "checkout", parentPath, "git", ["clone", job.repoUrl, repoPath]);
+    await runStep(client, job, "checkout", parentPath, "git", ["clone", job.repoUrl, repoPath], undefined, options);
   } else {
-    await runStep(client, job, "checkout", repoPath, "git", ["fetch", "--prune", "origin"]);
+    await runStep(client, job, "checkout", repoPath, "git", ["fetch", "--prune", "origin"], undefined, options);
   }
 
-  await runStep(client, job, "checkout", repoPath, "git", ["checkout", "--force", job.gitRef]);
+  await runStep(client, job, "checkout", repoPath, "git", ["checkout", "--force", job.gitRef], undefined, options);
 };
 
 const getCommitSha = async (client: ControllerClient, job: BuildJob, repoPath: string) => {
@@ -54,22 +59,27 @@ const getCommitSha = async (client: ControllerClient, job: BuildJob, repoPath: s
   return commitSha;
 };
 
-export const runJob = async (client: ControllerClient, job: BuildJob, workspaceRoot: string) => {
+export const runJob = async (client: ControllerClient, job: BuildJob, workspaceRoot: string, options: RunJobOptions = {}) => {
   const repoPath = join(workspaceRoot, job.project, "repo");
   const artifactPath = join(repoPath, job.appPath, ".facto", "artifacts", `${job.project}.ipa`);
   const appPath = join(repoPath, job.appPath);
+  const easVerboseArgs = options.verbose ? ["--verbose"] : [];
 
   try {
-    await checkoutRepo(client, job, repoPath);
+    if (options.verbose) {
+      console.log(`[${job.id}] leased ${job.project} ${job.gitRef}`);
+    }
+
+    await checkoutRepo(client, job, repoPath, options);
     const commitSha = await getCommitSha(client, job, repoPath);
-    await runStep(client, job, "install", appPath, "npm", ["ci"]);
+    await runStep(client, job, "install", appPath, "npm", ["ci"], undefined, options);
 
     for (const check of job.checks) {
       const { name, args } = commandForShell(check);
-      await runStep(client, job, "check", appPath, name, args);
+      await runStep(client, job, "check", appPath, name, args, undefined, options);
     }
 
-    await runStep(client, job, "prebuild", appPath, "npx", ["expo", "prebuild", "--platform", "ios"], { CI: "1" });
+    await runStep(client, job, "prebuild", appPath, "npx", ["expo", "prebuild", "--platform", "ios"], { CI: "1" }, options);
     mkdirSync(dirname(artifactPath), { recursive: true });
     await runStep(client, job, "build", appPath, "npx", [
       "eas-cli@latest",
@@ -83,7 +93,8 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
       artifactPath,
       "--non-interactive",
       "--freeze-credentials",
-    ]);
+      ...easVerboseArgs,
+    ], undefined, options);
 
     if (existsSync(artifactPath)) {
       await client.registerArtifact(job.id, {
@@ -104,7 +115,8 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
         "--path",
         artifactPath,
         "--non-interactive",
-      ]);
+        ...easVerboseArgs,
+      ], undefined, options);
     }
 
     await client.sendEvent(job.id, { type: "job.finished", status: "complete", commitSha });

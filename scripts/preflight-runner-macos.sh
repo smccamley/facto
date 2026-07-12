@@ -1,0 +1,417 @@
+#!/usr/bin/env bash
+set -euo pipefail
+shopt -s extglob
+
+MANIFEST=""
+VERBOSE=0
+CHECK_ONLY=0
+
+usage() {
+  cat <<'EOF'
+Usage: preflight-runner-macos.sh --manifest docs/runner-toolchain.md [-V|--verbose] [--check-only]
+
+Checks the macOS runner toolchain against the Markdown manifest and installs or
+upgrades managed tools where possible.
+EOF
+}
+
+log() {
+  printf '%s\n' "$*"
+}
+
+debug() {
+  if [[ "$VERBOSE" == "1" ]]; then
+    printf '[preflight] %s\n' "$*"
+  fi
+}
+
+fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --manifest)
+      MANIFEST="${2:-}"
+      shift 2
+      ;;
+    -V|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    --check-only)
+      CHECK_ONLY=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "Unknown option: $1"
+      ;;
+  esac
+done
+
+[[ -n "$MANIFEST" ]] || fail "--manifest is required"
+[[ -f "$MANIFEST" ]] || fail "Manifest not found: $MANIFEST"
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  fail "Facto iOS runners require macOS."
+fi
+
+version_number() {
+  printf '%s\n' "${1:-}" | sed -E 's/^[^0-9]*//; s/[^0-9.].*$//'
+}
+
+version_at_least() {
+  local actual
+  local required
+  local index
+  local actual_part
+  local required_part
+
+  actual="$(version_number "$1")"
+  required="$(version_number "$2")"
+
+  [[ -n "$actual" && -n "$required" ]] || return 1
+
+  IFS='.' read -r -a actual_parts <<< "$actual"
+  IFS='.' read -r -a required_parts <<< "$required"
+
+  for ((index = 0; index < ${#required_parts[@]}; index += 1)); do
+    actual_part="${actual_parts[$index]:-0}"
+    required_part="${required_parts[$index]:-0}"
+    actual_part="${actual_part##+(0)}"
+    required_part="${required_part##+(0)}"
+    actual_part="${actual_part:-0}"
+    required_part="${required_part:-0}"
+
+    if ((10#$actual_part > 10#$required_part)); then
+      return 0
+    fi
+
+    if ((10#$actual_part < 10#$required_part)); then
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+extract_manifest_rows() {
+  awk '
+    /<!-- facto-runner-toolchain:start -->/ { inside = 1; next }
+    /<!-- facto-runner-toolchain:end -->/ { inside = 0 }
+    inside && /^\|/ {
+      if ($0 ~ /^\|[[:space:]]*-+/) next
+      if ($0 ~ /^\|[[:space:]]*id[[:space:]]*\|/) next
+      print
+    }
+  ' "$MANIFEST"
+}
+
+trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+manifest_value() {
+  local wanted_id="$1"
+  local wanted_column="$2"
+  local row
+  local id
+  local command
+  local version
+  local manager
+  local package_name
+  local required
+
+  while IFS= read -r row; do
+    IFS='|' read -r _ id command version manager package_name required _ <<< "$row"
+    id="$(trim "$id")"
+
+    if [[ "$id" == "$wanted_id" ]]; then
+      case "$wanted_column" in
+        command) trim "$command" ;;
+        version) trim "$version" ;;
+        manager) trim "$manager" ;;
+        package) trim "$package_name" ;;
+        required) trim "$required" ;;
+        *) return 1 ;;
+      esac
+      return 0
+    fi
+  done < <(extract_manifest_rows)
+
+  return 1
+}
+
+prepend_path_once() {
+  local path="$1"
+  [[ -d "$path" ]] || return 0
+
+  case ":$PATH:" in
+    *":$path:"*) ;;
+    *) export PATH="$path:$PATH" ;;
+  esac
+}
+
+ensure_homebrew() {
+  prepend_path_once "/opt/homebrew/bin"
+  prepend_path_once "/usr/local/bin"
+
+  if command -v brew >/dev/null 2>&1; then
+    debug "homebrew found at $(command -v brew)"
+    return 0
+  fi
+
+  [[ "$CHECK_ONLY" == "0" ]] || fail "Homebrew is missing."
+
+  log "Installing Homebrew..."
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  prepend_path_once "/opt/homebrew/bin"
+  prepend_path_once "/usr/local/bin"
+  command -v brew >/dev/null 2>&1 || fail "Homebrew install completed but brew is not on PATH."
+}
+
+brew_prefix() {
+  brew --prefix "$1" 2>/dev/null || true
+}
+
+configure_managed_paths() {
+  command -v brew >/dev/null 2>&1 || return 0
+
+  prepend_path_once "$(brew --prefix)/bin"
+  prepend_path_once "$(brew --prefix)/sbin"
+
+  local node_prefix
+  local ruby_prefix
+  node_prefix="$(brew_prefix node@24)"
+  ruby_prefix="$(brew_prefix ruby)"
+
+  [[ -n "$node_prefix" ]] && prepend_path_once "$node_prefix/bin"
+  [[ -n "$ruby_prefix" ]] && prepend_path_once "$ruby_prefix/bin"
+}
+
+brew_install_or_upgrade() {
+  local package_name="$1"
+
+  ensure_homebrew
+  configure_managed_paths
+
+  [[ "$CHECK_ONLY" == "0" ]] || return 0
+
+  if brew list --versions "$package_name" >/dev/null 2>&1; then
+    local outdated
+    outdated="$(brew outdated --quiet "$package_name" || true)"
+
+    if [[ -n "$outdated" ]]; then
+      log "Upgrading $package_name with Homebrew..."
+      brew upgrade "$package_name"
+    else
+      debug "$package_name is already current in Homebrew"
+    fi
+  else
+    log "Installing $package_name with Homebrew..."
+    brew install "$package_name"
+  fi
+
+  configure_managed_paths
+}
+
+require_command_version() {
+  local id="$1"
+  local command_name
+  local required_version
+  local manager
+  local package_name
+  local actual_version
+
+  command_name="$(manifest_value "$id" command)"
+  required_version="$(manifest_value "$id" version)"
+  manager="$(manifest_value "$id" manager)"
+  package_name="$(manifest_value "$id" package)"
+
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    if [[ "$manager" == "homebrew" ]]; then
+      brew_install_or_upgrade "$package_name"
+    elif [[ "$manager" == "npm" ]]; then
+      require_command_version node
+      require_command_version npm
+      [[ "$CHECK_ONLY" == "0" ]] || fail "$command_name is missing."
+      log "Installing $package_name with npm..."
+      npm install -g "$package_name@latest"
+    else
+      fail "$command_name is missing and cannot be installed automatically."
+    fi
+  elif [[ "$manager" == "homebrew" ]]; then
+    brew_install_or_upgrade "$package_name"
+  fi
+
+  command -v "$command_name" >/dev/null 2>&1 || fail "$command_name is still missing after install."
+
+  case "$id" in
+    xcodebuild) actual_version="$(xcodebuild -version | awk '/Xcode/ {print $2; exit}')" ;;
+    ios-sdk) actual_version="$(xcrun --sdk iphoneos --show-sdk-version)" ;;
+    eas-cli) actual_version="$(npm view eas-cli version)" ;;
+    expo-cli) actual_version="$(npm view expo version)" ;;
+    *) actual_version="$("$command_name" --version 2>&1 | head -n 1 | sed -E 's/^[^0-9]*//')" ;;
+  esac
+
+  if [[ "$id" == "npm" && "$CHECK_ONLY" == "0" ]] && ! version_at_least "$actual_version" "$required_version"; then
+    log "Upgrading npm to latest..."
+    npm install -g npm@latest
+    actual_version="$(npm --version)"
+  fi
+
+  if version_at_least "$actual_version" "$required_version"; then
+    log "ok $id $actual_version"
+  else
+    fail "$id is $actual_version, expected at least $required_version."
+  fi
+}
+
+require_xcode() {
+  local required_version
+  local actual_version
+
+  required_version="$(manifest_value xcodebuild version)"
+
+  if ! command -v xcodebuild >/dev/null 2>&1; then
+    fail "Xcode is missing. Install Xcode $required_version from Apple Developer Downloads or the App Store, then run sudo xcode-select -s /Applications/Xcode.app/Contents/Developer."
+  fi
+
+  actual_version="$(xcodebuild -version | awk '/Xcode/ {print $2; exit}')"
+
+  if ! version_at_least "$actual_version" "$required_version"; then
+    fail "Xcode is $actual_version, expected at least $required_version. Update Xcode before starting the runner."
+  fi
+
+  if ! xcodebuild -license check >/dev/null 2>&1; then
+    fail "Xcode license has not been accepted. Run sudo xcodebuild -license accept."
+  fi
+
+  log "ok xcodebuild $actual_version"
+  require_command_version ios-sdk
+}
+
+require_github_access() {
+  local required_version
+  local actual_version
+  local ssh_output
+
+  require_command_version gh
+  required_version="$(manifest_value github-auth version)"
+  actual_version="missing"
+
+  if gh auth status -h github.com >/dev/null 2>&1; then
+    actual_version="gh-authenticated"
+  elif ssh_output="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 || true)" && [[ "$ssh_output" == *"successfully authenticated"* ]]; then
+    actual_version="ssh-authenticated"
+  fi
+
+  if [[ "$actual_version" == "$required_version" || "$actual_version" == "gh-authenticated" || "$actual_version" == "ssh-authenticated" ]]; then
+    log "ok github-auth $actual_version"
+    return 0
+  fi
+
+  fail "GitHub access is not configured. Run gh auth login or configure a deploy key with npm run setup:github-key."
+}
+
+require_signing_env() {
+  local required_version
+
+  required_version="$(manifest_value app-store-connect-auth version)"
+
+  if [[ -n "${EXPO_ASC_API_KEY_PATH:-}" && -n "${EXPO_ASC_KEY_ID:-}" && -n "${EXPO_ASC_ISSUER_ID:-}" ]]; then
+    [[ -f "$EXPO_ASC_API_KEY_PATH" ]] || fail "EXPO_ASC_API_KEY_PATH is set but the file does not exist: $EXPO_ASC_API_KEY_PATH"
+    log "ok app-store-connect-auth api-key"
+    return 0
+  fi
+
+  if [[ -n "${EXPO_APPLE_ID:-}" && -n "${EXPO_APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+    log "ok app-store-connect-auth apple-id"
+    return 0
+  fi
+
+  fail "App Store Connect credentials are missing. Expected $required_version: EXPO_ASC_API_KEY_PATH, EXPO_ASC_KEY_ID, and EXPO_ASC_ISSUER_ID, or Apple ID fallback env vars."
+}
+
+require_npx_package_latest() {
+  local id="$1"
+  local required_version
+  local actual_version
+
+  require_command_version node
+  require_command_version npm
+
+  required_version="$(manifest_value "$id" version)"
+  actual_version="$(npm view "$(manifest_value "$id" package)" version)"
+
+  if version_at_least "$actual_version" "$required_version"; then
+    log "ok $id $actual_version"
+  else
+    fail "$id latest registry version is $actual_version, expected at least $required_version."
+  fi
+}
+
+run_check_for_id() {
+  local id="$1"
+
+  case "$id" in
+    macos)
+      local required_version
+      local actual_version
+      required_version="$(manifest_value macos version)"
+      actual_version="$(sw_vers -productVersion)"
+
+      if version_at_least "$actual_version" "$required_version"; then
+        log "ok macos $actual_version"
+      else
+        fail "macOS is $actual_version, expected at least $required_version."
+      fi
+      ;;
+    homebrew)
+      ensure_homebrew
+      configure_managed_paths
+      log "ok homebrew $(brew --version | head -n 1 | sed -E 's/^[^0-9]*//')"
+      ;;
+    xcodebuild)
+      require_xcode
+      ;;
+    github-auth)
+      require_github_access
+      ;;
+    app-store-connect-auth)
+      require_signing_env
+      ;;
+    eas-cli|expo-cli)
+      require_npx_package_latest "$id"
+      ;;
+    *)
+      require_command_version "$id"
+      ;;
+  esac
+}
+
+log "Checking Facto runner toolchain from $MANIFEST"
+
+while IFS= read -r row; do
+  IFS='|' read -r _ id _ _ _ _ required _ <<< "$row"
+  id="$(trim "$id")"
+  required="$(trim "$required")"
+
+  if [[ "$required" == "optional" ]]; then
+    debug "Skipping optional manifest item: $id"
+    continue
+  fi
+
+  run_check_for_id "$id"
+done < <(extract_manifest_rows)
+
+log "Facto runner preflight complete."
