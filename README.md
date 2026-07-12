@@ -1,6 +1,6 @@
 # Expo Facto
 
-[![npm version](https://img.shields.io/npm/v/expofacto.svg)](https://www.npmjs.com/package/expofacto)
+[![npm version](https://img.shields.io/npm/v/@expofacto/cli.svg)](https://www.npmjs.com/package/@expofacto/cli)
 [![CI](https://github.com/smccamley/facto/actions/workflows/ci.yml/badge.svg)](https://github.com/smccamley/facto/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -13,7 +13,7 @@ Expo is a great way to build native apps. Paying for every cloud build while you
 Install Expo Facto in an Expo app repo:
 
 ```bash
-npm install expofacto
+npm install @expofacto/cli
 npm run setup
 npm run deploy
 ```
@@ -21,7 +21,7 @@ npm run deploy
 Or submit a build job directly:
 
 ```bash
-npx expofacto build ios \
+npx --package @expofacto/cli expofacto build ios \
   --controller-url http://localhost:4100 \
   --token "$FACTO_API_TOKEN" \
   --project my-app \
@@ -56,7 +56,7 @@ Expo Facto is built for searches like:
 Install:
 
 ```bash
-npm install expofacto
+npm install @expofacto/cli
 ```
 
 The postinstall step adds safe ignore rules for local secrets and artifacts, creates `.expofacto/deploy.sh`, and adds package scripts when they do not already exist.
@@ -111,7 +111,7 @@ Run a hosted macOS runner from a clean machine:
 
 ```bash
 FACTO_API_KEY=<your-api-key>
-npx expofacto start runner --api-key "$FACTO_API_KEY"
+npx --package @expofacto/cli expofacto start runner --api-key "$FACTO_API_KEY"
 ```
 
 Open `http://localhost:4100` for the operational status page.

@@ -7,7 +7,7 @@ Expo Facto runs a controller and one or more Mac workers. The CLI submits a buil
 ## Install in an Expo app
 
 ```bash
-npm install expofacto
+npm install @expofacto/cli
 npm run setup
 ```
 
@@ -22,7 +22,7 @@ EXPO_TOKEN=your-expo-token
 Submit an iOS build:
 
 ```bash
-npx expofacto build ios \
+npx --package @expofacto/cli expofacto build ios \
   --project my-app \
   --repo git@github.com:OWNER/REPO.git \
   --ref main \

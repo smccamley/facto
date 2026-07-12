@@ -13,7 +13,7 @@ This asks Expo's remote infrastructure to build the app.
 ## After
 
 ```bash
-npx expofacto build ios \
+npx --package @expofacto/cli expofacto build ios \
   --controller-url https://facto.example.com \
   --token "$FACTO_API_TOKEN" \
   --project my-app \

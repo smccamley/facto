@@ -15,7 +15,7 @@ ios:
 Or pass it on the command line:
 
 ```bash
-npx expofacto build ios \
+npx --package @expofacto/cli expofacto build ios \
   --project my-app \
   --repo git@github.com:OWNER/REPO.git \
   --ref main \

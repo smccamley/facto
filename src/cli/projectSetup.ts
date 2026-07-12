@@ -150,7 +150,7 @@ if [[ -f .expofacto/secrets.env ]]; then
   set +a
 fi
 
-exec npx expofacto deploy "$@"
+exec npx --package @expofacto/cli expofacto deploy "$@"
 `;
 };
 

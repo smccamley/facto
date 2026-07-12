@@ -31,7 +31,7 @@ checks:
 Submit the build:
 
 ```bash
-npx expofacto build ios \
+npx --package @expofacto/cli expofacto build ios \
   --project app \
   --repo git@github.com:OWNER/REPO.git \
   --ref main \
