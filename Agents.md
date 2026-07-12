@@ -1,9 +1,40 @@
 # AGENTS.md
 
+## Important Coding Style
+
+Before doing coding work, read `../codestyle.md`. Its guidance on naming,
+small changes, error handling, TypeScript, UI style, and cross-repo product
+contracts is part of this repo's working rules.
+
 # Deploy Commit Push and Pull
 
 Use GITHUB_PERSONAL_ACCESS_TOKEN in .env
 use NPM_TOKEN_EXPOFACTO in .env
+
+## Deployment Rule
+
+Every completed job with a deployable effect must end with publication or live
+deployment work. Local checks are not done. A pushed commit is not done. Done
+means the package, service, docs, and dashboard agree in the live places users
+touch.
+
+For CLI/package changes:
+
+1. Run `npm run typecheck`.
+2. Run `npm test`.
+3. Run `npm run build`.
+4. Commit and push to `main`.
+5. Confirm the GitHub Actions `Publish npm package` workflow has run.
+6. Verify the new package is visible on npm with `npm view @expofacto/cli version`.
+
+For changes that affect the hosted API, dashboard text, setup output, docs, or
+runner lifecycle, also deploy `facto-infrastructure` and verify
+`https://expofacto.dev/api/health` returns `{"ok":true}`.
+
+If a task only changes non-deployable agent instructions, say that there is no
+production artifact to deploy. Otherwise, keep going until the live publication
+or deployment is verified. If deployment cannot finish, say exactly what
+external access, token, workflow result, or secret is missing.
 
 # Personal response style
 
