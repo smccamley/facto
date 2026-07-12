@@ -1,6 +1,7 @@
 {
-  "name": "@expofacto/expofacto",
-  "version": "0.1.13",
+  "name": "@expofacto/cli",
+  "version": "0.1.1",
+  "description": "Run Expo/EAS iOS builds on Mac hardware you control.",
   "type": "module",
   "repository": {
     "type": "git",

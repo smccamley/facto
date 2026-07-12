@@ -25,7 +25,7 @@ Expo Facto is a drop-in path for the expensive part of the Expo build flow: run 
 Install Expo Facto in your Expo app repo:
 
 ```bash
-npm install @expofacto/expofacto
+npm install @expofacto/cli
 ```
 
 Install creates `.expofacto/deploy.sh`, adds safe ignore rules for local secrets and artifacts, and adds package scripts when they do not already exist.
