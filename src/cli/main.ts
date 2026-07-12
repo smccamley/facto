@@ -6,7 +6,8 @@ import { loadFactoEnv } from "../shared/envFile.js";
 import type { CreateJobInput, SubmitTarget } from "../shared/jobTypes.js";
 import { setupProject } from "./projectSetup.js";
 import { runJob } from "../worker/runJob.js";
-import { createHostedRunnerClient } from "../worker/hostedClient.js";
+import type { ControllerClient } from "../worker/controllerClient.js";
+import { createHostedRunnerClient, isRunnerKillRequestedError } from "../worker/hostedClient.js";
 import { runRunnerPreflight } from "../worker/preflight.js";
 
 loadFactoEnv([".expofacto/secrets.env", ".facto/controller.env"]);
@@ -82,6 +83,38 @@ const sleep = async (milliseconds: number) => {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 };
 
+const remoteKillError = () => new Error("Runner was killed remotely");
+
+const watchRunnerKill = (client: ControllerClient, abortController: AbortController) => {
+  let stopped = false;
+
+  const watch = async () => {
+    while (!stopped && !abortController.signal.aborted) {
+      const command = await client.checkRunnerCommand?.();
+
+      if (command?.type === "kill") {
+        abortController.abort(remoteKillError());
+        return;
+      }
+
+      await sleep(2_000);
+    }
+  };
+
+  void watch().catch((error) => {
+    abortController.abort(error instanceof Error ? error : remoteKillError());
+  });
+
+  return () => {
+    stopped = true;
+  };
+};
+
+const acknowledgeRunnerKill = async (client: ControllerClient) => {
+  await client.acknowledgeRunnerKill?.();
+  console.log("Runner was killed remotely; exiting.");
+};
+
 const toSubmitTarget = (value: string | undefined): SubmitTarget => (value === "testflight" ? "testflight" : "none");
 
 const toChecks = (value: unknown) => {
@@ -143,10 +176,35 @@ const startHostedRunner = async (options: CliOptions) => {
   console.log(`Facto runner ${runner.name} polling ${serviceUrl}`);
 
   while (true) {
-    const job = await client.leaseJob();
+    let job;
+
+    try {
+      job = await client.leaseJob();
+    } catch (error) {
+      if (isRunnerKillRequestedError(error)) {
+        await acknowledgeRunnerKill(client);
+        return;
+      }
+
+      throw error;
+    }
 
     if (job) {
-      await runJob(client, job, workspaceRoot, { verbose });
+      const abortController = new AbortController();
+      const stopWatchingKill = watchRunnerKill(client, abortController);
+
+      try {
+        await runJob(client, job, workspaceRoot, { verbose, signal: abortController.signal });
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          await acknowledgeRunnerKill(client);
+          return;
+        }
+
+        throw error;
+      } finally {
+        stopWatchingKill();
+      }
     } else if (verbose) {
       console.log(`No job available; polling again in ${pollIntervalMs}ms`);
     }

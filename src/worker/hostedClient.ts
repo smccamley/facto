@@ -29,6 +29,22 @@ type HostedRegisterResponse = {
   heartbeatUrl: string;
 };
 
+type HostedRunnerCommand = {
+  type: "kill";
+  requestedAt: string | null;
+};
+
+class RunnerKillRequestedError extends Error {
+  constructor() {
+    super("Runner was killed remotely");
+    this.name = "RunnerKillRequestedError";
+  }
+}
+
+export const isRunnerKillRequestedError = (error: unknown) => {
+  return error instanceof RunnerKillRequestedError;
+};
+
 const sleep = async (milliseconds: number) => {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 };
@@ -124,12 +140,18 @@ export const createHostedRunnerClient = async (options: {
   });
   const leaseUrl = absoluteUrl(baseUrl, registered.leaseUrl);
   const heartbeatUrl = absoluteUrl(baseUrl, registered.heartbeatUrl);
+  const acknowledgeKillUrl = absoluteUrl(baseUrl, `/api/runners/${registered.runner.id}/kill/ack`);
 
   return {
     runner: registered.runner,
     client: {
       leaseJob: async () => {
-        const result = await requestJson<{ job: HostedJob | null }>(leaseUrl, options.apiKey, { method: "POST" });
+        const result = await requestJson<{ job: HostedJob | null; command?: HostedRunnerCommand | null }>(leaseUrl, options.apiKey, { method: "POST" });
+
+        if (result.command?.type === "kill") {
+          throw new RunnerKillRequestedError();
+        }
+
         return result.job ? mapHostedJob(result.job) : null;
       },
 
@@ -151,6 +173,15 @@ export const createHostedRunnerClient = async (options: {
       },
 
       getJob: async () => null,
+
+      checkRunnerCommand: async () => {
+        const result = await requestJson<{ command?: HostedRunnerCommand | null }>(heartbeatUrl, options.apiKey, { method: "POST" });
+        return result.command ?? null;
+      },
+
+      acknowledgeRunnerKill: async () => {
+        await requestJson(acknowledgeKillUrl, options.apiKey, { method: "POST" });
+      },
     },
   };
 };

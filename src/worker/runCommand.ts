@@ -11,6 +11,7 @@ type RunCommandOptions = {
   env?: NodeJS.ProcessEnv;
   client: ControllerClient;
   verbose?: boolean;
+  signal?: AbortSignal;
 };
 
 const splitLines = (text: string, previous: string) => {
@@ -22,6 +23,10 @@ const splitLines = (text: string, previous: string) => {
 const stepPrefix = (step: string) => `${step}: `;
 
 export const runCommand = async (options: RunCommandOptions) => {
+  if (options.signal?.aborted) {
+    throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Runner was killed remotely");
+  }
+
   const env = { ...process.env, ...options.env };
   const redact = createRedactor(env);
   let stdoutBuffer = "";
@@ -42,8 +47,23 @@ export const runCommand = async (options: RunCommandOptions) => {
   const child = spawn(options.command, options.args, {
     cwd: options.cwd,
     env,
+    detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
+
+  const killChild = () => {
+    if (!child.pid) {
+      return;
+    }
+
+    try {
+      process.kill(process.platform === "win32" ? child.pid : -child.pid, "SIGTERM");
+    } catch {
+      child.kill("SIGTERM");
+    }
+  };
+
+  options.signal?.addEventListener("abort", killChild, { once: true });
 
   const sendLines = async (chunk: Buffer, streamName: "stdout" | "stderr") => {
     const buffer = streamName === "stdout" ? stdoutBuffer : stderrBuffer;
@@ -82,6 +102,7 @@ export const runCommand = async (options: RunCommandOptions) => {
   return await new Promise<number>((resolve, reject) => {
     child.on("error", reject);
     child.on("close", async (exitCode) => {
+      options.signal?.removeEventListener("abort", killChild);
       await sendQueue;
 
       if (stdoutBuffer) {
@@ -102,6 +123,11 @@ export const runCommand = async (options: RunCommandOptions) => {
         }
 
         await options.client.sendEvent(options.jobId, { type: "log.line", step: options.step, line: redactedStderrBuffer });
+      }
+
+      if (options.signal?.aborted) {
+        reject(options.signal.reason instanceof Error ? options.signal.reason : new Error("Runner was killed remotely"));
+        return;
       }
 
       resolve(exitCode ?? 1);

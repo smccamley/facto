@@ -5,6 +5,8 @@ export type ControllerClient = {
   sendEvent: (jobId: string, event: WorkerEventInput) => Promise<void>;
   registerArtifact: (jobId: string, artifact: { kind: string; path: string; sizeBytes: number | null }) => Promise<void>;
   getJob: (jobId: string) => Promise<BuildJob | null>;
+  checkRunnerCommand?: () => Promise<{ type: "kill"; requestedAt: string | null } | null>;
+  acknowledgeRunnerKill?: () => Promise<void>;
 };
 
 const sleep = async (milliseconds: number) => {

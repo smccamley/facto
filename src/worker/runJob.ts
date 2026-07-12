@@ -6,6 +6,7 @@ import type { ControllerClient } from "./controllerClient.js";
 import { runCommand } from "./runCommand.js";
 
 type RunJobOptions = {
+  signal?: AbortSignal;
   verbose?: boolean;
 };
 
@@ -24,6 +25,10 @@ const runStep = async (
   env?: NodeJS.ProcessEnv,
   options: RunJobOptions = {}
 ) => {
+  if (options.signal?.aborted) {
+    throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Runner was killed remotely");
+  }
+
   const latestJob = await client.getJob(job.id);
 
   if (latestJob?.status === "cancelled") {
@@ -31,7 +36,7 @@ const runStep = async (
   }
 
   await client.sendEvent(job.id, { type: "step.started", step });
-  const exitCode = await runCommand({ jobId: job.id, step, command, args, cwd, env, client, verbose: options.verbose });
+  const exitCode = await runCommand({ jobId: job.id, step, command, args, cwd, env, client, verbose: options.verbose, signal: options.signal });
   const status = exitCode === 0 ? "complete" : "failed";
   await client.sendEvent(job.id, { type: "step.finished", step, status, exitCode });
 
@@ -121,6 +126,10 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
 
     await client.sendEvent(job.id, { type: "job.finished", status: "complete", commitSha });
   } catch (error) {
+    if (options.signal?.aborted) {
+      throw error;
+    }
+
     await client.sendEvent(job.id, {
       type: "job.finished",
       status: "failed",
