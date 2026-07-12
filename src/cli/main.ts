@@ -12,6 +12,14 @@ loadFactoEnv([".expofacto/secrets.env", ".facto/controller.env"]);
 
 type CliOptions = Record<string, string | boolean>;
 
+const assertSupportedNode = () => {
+  const major = Number(process.versions.node.split(".")[0]);
+
+  if (major < 24) {
+    throw new Error(`Expo Facto requires Node.js 24 or newer. Current Node.js is ${process.version}.`);
+  }
+};
+
 const parseArgs = (args: string[]) => {
   const positional: string[] = [];
   const options: CliOptions = {};
@@ -134,6 +142,7 @@ const startHostedRunner = async (options: CliOptions) => {
 };
 
 const main = async () => {
+  assertSupportedNode();
   const { positional, options } = parseArgs(process.argv.slice(2));
   const command = positional[0];
 

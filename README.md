@@ -110,6 +110,7 @@ FACTO_ENV_FILE=.facto/worker.env npm run dev:worker
 Run a hosted macOS runner from a clean machine:
 
 ```bash
+node --version # must be v24+
 FACTO_API_KEY=<your-api-key>
 npx --package @expofacto/cli expofacto start runner --api-key "$FACTO_API_KEY"
 ```
