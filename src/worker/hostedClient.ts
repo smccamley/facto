@@ -1,5 +1,6 @@
 import type { BuildJob, SubmitTarget, WorkerEventInput } from "../shared/jobTypes.js";
 import type { ControllerClient } from "./controllerClient.js";
+import { formatHttpError, formatRequestFailure } from "./runnerErrors.js";
 
 type HostedRunner = {
   id: string;
@@ -52,7 +53,9 @@ const sleep = async (milliseconds: number) => {
 const requestJson = async <T>(url: string, apiKey: string, options: RequestInit) => {
   let lastError: unknown;
 
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  const attempts = 3;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const response = await fetch(url, {
         ...options,
@@ -64,7 +67,7 @@ const requestJson = async <T>(url: string, apiKey: string, options: RequestInit)
       });
 
       if (!response.ok) {
-        throw new Error(`${options.method ?? "GET"} ${url} failed with ${response.status}: ${await response.text()}`);
+        throw new Error(await formatHttpError(response, { method: options.method, url }));
       }
 
       return (await response.json()) as T;
@@ -74,7 +77,7 @@ const requestJson = async <T>(url: string, apiKey: string, options: RequestInit)
     }
   }
 
-  throw lastError;
+  throw new Error(formatRequestFailure(lastError, { method: options.method, url, attempts }));
 };
 
 const toSubmitTarget = (value: string): SubmitTarget => (value === "testflight" ? "testflight" : "none");

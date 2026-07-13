@@ -9,6 +9,7 @@ import { runJob } from "../worker/runJob.js";
 import type { ControllerClient } from "../worker/controllerClient.js";
 import { createHostedRunnerClient, isRunnerKillRequestedError } from "../worker/hostedClient.js";
 import { runRunnerPreflight } from "../worker/preflight.js";
+import { formatRunnerError } from "../worker/runnerErrors.js";
 
 loadFactoEnv([".expofacto/secrets.env", ".facto/controller.env"]);
 
@@ -253,6 +254,6 @@ const main = async () => {
 };
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(formatRunnerError(error));
   process.exit(1);
 });

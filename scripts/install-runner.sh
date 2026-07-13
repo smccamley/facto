@@ -38,6 +38,11 @@ fail() {
   exit 1
 }
 
+fail_runtime() {
+  echo "install-runner: $*" >&2
+  exit 1
+}
+
 need_value() {
   local option="$1"
   local value="${2:-}"
@@ -127,12 +132,12 @@ load_or_install_nvm() {
   if [[ -z "${nvm_script:-}" ]]; then
     command -v curl >/dev/null 2>&1 || fail "curl is required to install nvm."
     echo "Installing nvm ${nvm_version}..."
-    curl -fsSL "$nvm_install_url" | bash
+    curl -fsSL "$nvm_install_url" | bash || fail_runtime "Could not install nvm. Check your internet connection and rerun this installer."
     nvm_script="$NVM_DIR/nvm.sh"
   fi
 
   if [[ ! -s "$nvm_script" ]]; then
-    fail "nvm did not install cleanly."
+    fail_runtime "nvm did not install cleanly at $nvm_script."
   fi
 
   # shellcheck source=/dev/null
@@ -146,19 +151,25 @@ ensure_node() {
 
   load_or_install_nvm
   echo "Installing Node.js ${required_node_major} with nvm..."
-  nvm install "$required_node_major"
-  nvm use "$required_node_major" >/dev/null
+  nvm install "$required_node_major" || fail_runtime "Could not install Node.js ${required_node_major} with nvm."
+  nvm use "$required_node_major" >/dev/null || fail_runtime "Could not activate Node.js ${required_node_major} with nvm."
 
   if ! has_supported_node; then
-    fail "Node.js ${required_node_major}+ and npx are required but were not found after nvm setup."
+    fail_runtime "Node.js ${required_node_major}+ and npx are required but were not found after nvm setup."
   fi
 }
 
-mkdir -p "$runner_dir"
-cd "$runner_dir"
-printf "%s\n" "$required_node_major" > .nvmrc
+mkdir -p "$runner_dir" || fail_runtime "Could not create runner directory: $runner_dir"
+cd "$runner_dir" || fail_runtime "Could not enter runner directory: $runner_dir"
+printf "%s\n" "$required_node_major" > .nvmrc || fail_runtime "Could not write $runner_dir/.nvmrc"
 
 ensure_node
 
 echo "Starting Facto runner from $runner_dir..."
-exec npx --yes --package "$cli_package" expofacto start runner "${runner_args[@]}"
+runner_command=(npx --yes --package "$cli_package" expofacto start runner)
+
+if ((${#runner_args[@]})); then
+  runner_command=("${runner_command[@]}" "${runner_args[@]}")
+fi
+
+exec "${runner_command[@]}"

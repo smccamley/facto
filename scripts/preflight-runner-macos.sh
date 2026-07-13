@@ -30,9 +30,19 @@ fail() {
   exit 1
 }
 
+need_value() {
+  local option="$1"
+  local value="${2:-}"
+
+  if [[ -z "$value" || "$value" == --* ]]; then
+    fail "$option requires a value"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --manifest)
+      need_value "$1" "${2:-}"
       MANIFEST="${2:-}"
       shift 2
       ;;

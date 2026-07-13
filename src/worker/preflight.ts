@@ -46,10 +46,10 @@ export const runRunnerPreflight = (options: RunnerPreflightOptions = {}) => {
   });
 
   if (result.error) {
-    throw result.error;
+    throw new Error(`Could not start runner preflight with bash: ${result.error.message}`);
   }
 
   if (result.status !== 0) {
-    throw new Error(`Runner preflight failed with exit code ${result.status ?? 1}`);
+    throw new Error(`Runner preflight failed with exit code ${result.status ?? 1}. Review the preflight output above, fix the missing tool or credential, then start the runner again.`);
   }
 };
