@@ -11,10 +11,10 @@ runner_args=()
 usage() {
   cat <<EOF
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/facto-cli/scripts/install-runner.sh | bash -s -- --api-key YOUR_FACTO_API_KEY
+  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/scripts/install-runner.sh | bash -s -- --api-key YOUR_FACTO_API_KEY
 
   export FACTO_API_KEY=YOUR_FACTO_API_KEY
-  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/facto-cli/scripts/install-runner.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/scripts/install-runner.sh | bash
 
 Options:
   --api-key <key>          Facto hosted runner API key. Can also be FACTO_API_KEY.
