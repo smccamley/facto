@@ -54,7 +54,7 @@
     "facto": "tsx src/cli/main.ts",
     "setup:github-key": "bash scripts/setup-github-deploy-key.sh",
     "setup:local": "bash scripts/setup-local.sh",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run build && bash -n scripts/install-runner.sh && node --test tests/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
