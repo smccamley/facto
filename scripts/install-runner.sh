@@ -11,10 +11,10 @@ runner_args=()
 usage() {
   cat <<EOF
 Usage:
-  curl -fsSL https://expofacto.dev/i | bash -s -- -k YOUR_FACTO_API_KEY
+  curl -fsSL https://expofacto.dev/install | bash -s -- -k YOUR_FACTO_API_KEY
 
   export FACTO_API_KEY=YOUR_FACTO_API_KEY
-  curl -fsSL https://expofacto.dev/i | bash
+  curl -fsSL https://expofacto.dev/install | bash
 
 Options:
   -k, --api-key <key>      Facto hosted runner API key. Can also be FACTO_API_KEY.

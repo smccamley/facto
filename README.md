@@ -116,14 +116,14 @@ npm run preflight:runner -- --verbose
 Run a hosted macOS runner from a clean machine with the API key inline:
 
 ```bash
-curl -fsSL https://expofacto.dev/i | bash -s -- -k YOUR_FACTO_API_KEY
+curl -fsSL https://expofacto.dev/install | bash -s -- -k YOUR_FACTO_API_KEY
 ```
 
 Or use an existing environment variable:
 
 ```bash
 export FACTO_API_KEY=YOUR_FACTO_API_KEY
-curl -fsSL https://expofacto.dev/i | bash
+curl -fsSL https://expofacto.dev/install | bash
 ```
 
 The installer creates `~/facto-runner`, checks for Node.js 24+ and `npx`, installs nvm and Node.js when they are missing, then starts the hosted runner. `expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs or upgrades Homebrew/npm tools, macOS updates, and Xcode, verifies GitHub access, the iOS SDK, and App Store Connect credentials, then stops early with a clear error only when the runner cannot repair itself. Set `XCODES_USERNAME` and `XCODES_PASSWORD` for unattended Xcode installs. Add `--verbose` to the installer command to mirror redacted build output to the runner terminal as well as the controller logs.
