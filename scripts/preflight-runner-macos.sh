@@ -10,8 +10,9 @@ usage() {
   cat <<'EOF'
 Usage: preflight-runner-macos.sh --manifest docs/runner-toolchain.md [-V|--verbose] [--check-only]
 
-Checks the macOS runner toolchain against the Markdown manifest and installs or
-upgrades tools where possible. macOS and Xcode installs can take a long time.
+Checks the macOS runner toolchain against the Markdown manifest. Missing tools
+are installed where possible; existing tools are left alone unless a required
+minimum version fails. macOS and Xcode repairs can take a long time.
 EOF
 }
 
@@ -170,9 +171,24 @@ prepend_path_once() {
   esac
 }
 
+append_path_once() {
+  local path="$1"
+  [[ -d "$path" ]] || return 0
+
+  case ":$PATH:" in
+    *":$path:"*) ;;
+    *) export PATH="$PATH:$path" ;;
+  esac
+}
+
 ensure_homebrew() {
-  prepend_path_once "/opt/homebrew/bin"
-  prepend_path_once "/usr/local/bin"
+  if command -v brew >/dev/null 2>&1; then
+    debug "homebrew found at $(command -v brew)"
+    return 0
+  fi
+
+  append_path_once "/opt/homebrew/bin"
+  append_path_once "/usr/local/bin"
 
   if command -v brew >/dev/null 2>&1; then
     debug "homebrew found at $(command -v brew)"
@@ -184,8 +200,8 @@ ensure_homebrew() {
   log "Installing Homebrew..."
   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-  prepend_path_once "/opt/homebrew/bin"
-  prepend_path_once "/usr/local/bin"
+  append_path_once "/opt/homebrew/bin"
+  append_path_once "/usr/local/bin"
   command -v brew >/dev/null 2>&1 || fail "Homebrew install completed but brew is not on PATH."
 }
 
@@ -196,16 +212,8 @@ brew_prefix() {
 configure_managed_paths() {
   command -v brew >/dev/null 2>&1 || return 0
 
-  prepend_path_once "$(brew --prefix)/bin"
-  prepend_path_once "$(brew --prefix)/sbin"
-
-  local node_prefix
-  local ruby_prefix
-  node_prefix="$(brew_prefix node@24)"
-  ruby_prefix="$(brew_prefix ruby)"
-
-  [[ -n "$node_prefix" ]] && prepend_path_once "$node_prefix/bin"
-  [[ -n "$ruby_prefix" ]] && prepend_path_once "$ruby_prefix/bin"
+  append_path_once "$(brew --prefix)/bin"
+  append_path_once "$(brew --prefix)/sbin"
 }
 
 run_sudo() {
@@ -217,7 +225,7 @@ run_sudo() {
   sudo "$@"
 }
 
-brew_install_or_upgrade() {
+brew_install_package() {
   local package_name="$1"
 
   ensure_homebrew
@@ -226,15 +234,26 @@ brew_install_or_upgrade() {
   [[ "$CHECK_ONLY" == "0" ]] || return 0
 
   if brew list --versions "$package_name" >/dev/null 2>&1; then
-    local outdated
-    outdated="$(brew outdated --quiet "$package_name" || true)"
+    debug "$package_name is already installed with Homebrew"
+  else
+    log "Installing $package_name with Homebrew..."
+    brew install "$package_name"
+  fi
 
-    if [[ -n "$outdated" ]]; then
-      log "Upgrading $package_name with Homebrew..."
-      brew upgrade "$package_name"
-    else
-      debug "$package_name is already current in Homebrew"
-    fi
+  configure_managed_paths
+}
+
+brew_upgrade_or_install_package() {
+  local package_name="$1"
+
+  ensure_homebrew
+  configure_managed_paths
+
+  [[ "$CHECK_ONLY" == "0" ]] || return 0
+
+  if brew list --versions "$package_name" >/dev/null 2>&1; then
+    log "Upgrading $package_name with Homebrew..."
+    brew upgrade "$package_name"
   else
     log "Installing $package_name with Homebrew..."
     brew install "$package_name"
@@ -345,6 +364,7 @@ require_command_version() {
   local manager
   local package_name
   local actual_version
+  local version_output
 
   command_name="$(manifest_value "$id" command)"
   required_version="$(manifest_value "$id" version)"
@@ -353,41 +373,77 @@ require_command_version() {
 
   if ! command -v "$command_name" >/dev/null 2>&1; then
     if [[ "$manager" == "homebrew" ]]; then
-      brew_install_or_upgrade "$package_name"
+      brew_install_package "$package_name"
     elif [[ "$manager" == "npm" ]]; then
       require_command_version node
       require_command_version npm
       [[ "$CHECK_ONLY" == "0" ]] || fail "$command_name is missing."
       log "Installing $package_name with npm..."
       npm install -g "$package_name@latest"
+    elif [[ "$manager" == "nvm" ]]; then
+      fail "$command_name is missing. Run the Facto installer so nvm can install Node.js before preflight."
     else
       fail "$command_name is missing and cannot be installed automatically."
     fi
-  elif [[ "$manager" == "homebrew" ]]; then
-    brew_install_or_upgrade "$package_name"
   fi
 
   command -v "$command_name" >/dev/null 2>&1 || fail "$command_name is still missing after install."
 
-  case "$id" in
-    xcodebuild) actual_version="$(xcodebuild -version | awk '/Xcode/ {print $2; exit}')" ;;
-    ios-sdk) actual_version="$(xcrun --sdk iphoneos --show-sdk-version)" ;;
-    eas-cli) actual_version="$(npm view eas-cli version)" ;;
-    expo-cli) actual_version="$(npm view expo version)" ;;
-    *) actual_version="$("$command_name" --version 2>&1 | head -n 1 | sed -E 's/^[^0-9]*//')" ;;
-  esac
-
-  if [[ "$id" == "npm" && "$CHECK_ONLY" == "0" ]] && ! version_at_least "$actual_version" "$required_version"; then
-    log "Upgrading npm to latest..."
-    npm install -g npm@latest
-    actual_version="$(npm --version)"
+  if [[ "$required_version" == "present" ]]; then
+    if version_output="$(command_version_for_id "$id" "$command_name" 2>&1)"; then
+      log "ok $id $version_output"
+    else
+      debug "$id version check failed: $version_output"
+      log "ok $id present"
+    fi
+    return 0
   fi
+
+  if ! version_output="$(command_version_for_id "$id" "$command_name" 2>&1)"; then
+    fail "$id version check failed: $version_output"
+  fi
+
+  actual_version="$version_output"
 
   if version_at_least "$actual_version" "$required_version"; then
     log "ok $id $actual_version"
+    return 0
+  fi
+
+  if [[ "$manager" == "homebrew" && "$CHECK_ONLY" == "0" ]]; then
+    brew_upgrade_or_install_package "$package_name"
+
+    if ! version_output="$(command_version_for_id "$id" "$command_name" 2>&1)"; then
+      fail "$id version check failed after installing $package_name: $version_output"
+    fi
+
+    actual_version="$version_output"
+
+    if version_at_least "$actual_version" "$required_version"; then
+      log "ok $id $actual_version"
+      return 0
+    fi
+  fi
+
+  if [[ "$manager" == "nvm" ]]; then
+    fail "$id is $actual_version, expected at least $required_version. Run the Facto installer to activate Node.js 24+ with nvm."
   else
     fail "$id is $actual_version, expected at least $required_version."
   fi
+}
+
+command_version_for_id() {
+  local id="$1"
+  local command_name="$2"
+
+  case "$id" in
+    xcodes) "$command_name" version | head -n 1 ;;
+    xcodebuild) xcodebuild -version | awk '/Xcode/ {print $2; exit}' ;;
+    ios-sdk) xcrun --sdk iphoneos --show-sdk-version ;;
+    eas-cli) npm view eas-cli version ;;
+    expo-cli) npm view expo version ;;
+    *) "$command_name" --version 2>&1 | head -n 1 | sed -E 's/^[^0-9]*//' ;;
+  esac
 }
 
 require_xcode() {
@@ -421,7 +477,6 @@ require_xcode() {
   fi
 
   log "ok xcodebuild $actual_version"
-  require_command_version ios-sdk
 }
 
 require_github_access() {
@@ -435,7 +490,7 @@ require_github_access() {
 
   if gh auth status -h github.com >/dev/null 2>&1; then
     actual_version="gh-authenticated"
-  elif ssh_output="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 || true)" && [[ "$ssh_output" == *"successfully authenticated"* ]]; then
+  elif ssh_output="$(ssh -n -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 || true)" && [[ "$ssh_output" == *"successfully authenticated"* ]]; then
     actual_version="ssh-authenticated"
   fi
 
@@ -530,7 +585,7 @@ run_check_for_id() {
 
 log "Checking Facto runner toolchain from $MANIFEST"
 
-while IFS= read -r row; do
+while IFS= read -r row <&3; do
   IFS='|' read -r _ id _ _ _ _ required _ <<< "$row"
   id="$(trim "$id")"
   required="$(trim "$required")"
@@ -540,7 +595,17 @@ while IFS= read -r row; do
     continue
   fi
 
+  if [[ "$required" == "repair" ]]; then
+    debug "Skipping repair-only manifest item: $id"
+    continue
+  fi
+
+  if [[ "$required" == "job" ]]; then
+    debug "Skipping job-time manifest item: $id"
+    continue
+  fi
+
   run_check_for_id "$id"
-done < <(extract_manifest_rows)
+done 3< <(extract_manifest_rows)
 
 log "Facto runner preflight complete."

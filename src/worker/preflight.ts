@@ -50,6 +50,6 @@ export const runRunnerPreflight = (options: RunnerPreflightOptions = {}) => {
   }
 
   if (result.status !== 0) {
-    throw new Error(`Runner preflight failed with exit code ${result.status ?? 1}. Review the preflight output above, fix the missing tool or credential, then start the runner again.`);
+    throw new Error(`Runner preflight failed with exit code ${result.status ?? 1}. Review the preflight output above, fix the missing tool, then start the runner again.`);
   }
 };

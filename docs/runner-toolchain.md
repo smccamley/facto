@@ -18,28 +18,31 @@ Sources used for this review:
 | --- | --- | --- | --- | --- | --- |
 | macos | sw_vers | 26.5.2 | softwareupdate | macOS | required |
 | homebrew | brew | latest | installer | homebrew | required |
-| xcodes | xcodes | 2.0.3 | homebrew | xcodesorg/made/xcodes | required |
-| aria2 | aria2c | 1.37.0 | homebrew | aria2 | required |
+| xcodes | xcodes | 2.0.3 | homebrew | xcodesorg/made/xcodes | repair |
+| aria2 | aria2c | 1.37.0 | homebrew | aria2 | repair |
 | xcodebuild | xcodebuild | 26.6 | xcodes | Xcode.app | required |
-| ios-sdk | xcrun | 26.6 | xcodes | Xcode.app | required |
-| git | git | 2.55.0 | homebrew | git | required |
-| gh | gh | 2.96.0 | homebrew | gh | required |
+| ios-sdk | xcrun | present | xcodes | Xcode.app | required |
+| git | git | present | homebrew | git | required |
+| gh | gh | present | homebrew | gh | required |
 | github-auth | gh | authenticated | manual | gh-auth-or-ssh-key | required |
-| node | node | 24.18.0 | homebrew | node@24 | required |
-| npm | npm | 12.0.1 | homebrew | node@24 | required |
-| npx | npx | 12.0.1 | homebrew | node@24 | required |
-| ruby | ruby | 4.0.5 | homebrew | ruby | required |
-| pod | pod | 1.17.0 | homebrew | cocoapods | required |
-| fastlane | fastlane | 2.237.0 | homebrew | fastlane | required |
-| watchman | watchman | 2026.07.06.00 | homebrew | watchman | required |
-| eas-cli | eas | 20.5.1 | npx | eas-cli | required |
-| expo-cli | expo | 57.0.4 | npx | expo | required |
-| app-store-connect-auth | env | api-key-or-apple-id | manual | Expo ASC env | required |
+| node | node | 24.0.0 | nvm | node | required |
+| npm | npm | present | nvm | npm | required |
+| npx | npx | present | nvm | npx | required |
+| ruby | ruby | present | homebrew | ruby | required |
+| pod | pod | present | homebrew | cocoapods | required |
+| fastlane | fastlane | present | homebrew | fastlane | required |
+| watchman | watchman | present | homebrew | watchman | required |
+| eas-cli | eas | 20.5.1 | npx | eas-cli | job |
+| expo-cli | expo | 57.0.4 | npx | expo | job |
+| app-store-connect-auth | env | api-key-or-apple-id | manual | Expo ASC env | job |
 <!-- facto-runner-toolchain:end -->
 
 Notes:
 
-- macOS updates are installed with `softwareupdate --install --all --restart` when the runner is below the manifest version.
-- Xcode is installed with `xcodes install <version> --select`. For unattended installs, set `XCODES_USERNAME` and `XCODES_PASSWORD`; otherwise `xcodes` may use saved Keychain credentials or prompt interactively.
+- macOS updates are installed with `softwareupdate --install --all --restart` only when the runner is below the manifest version.
+- Homebrew tools are installed when missing, but existing tools marked `present` are not upgraded during runner startup.
+- `xcodes` and `aria2` are repair-only dependencies. They are installed only when Xcode must be installed or upgraded.
+- Xcode is installed with `xcodes install <version> --select` only when the selected Xcode is missing or below the manifest version. For unattended installs, set `XCODES_USERNAME` and `XCODES_PASSWORD`; otherwise `xcodes` may use saved Keychain credentials or prompt interactively.
+- `job` entries are checked when a build or submit job actually needs them, not before the idle runner comes online.
 - `github-auth` passes when either `gh auth status -h github.com` succeeds or SSH to `git@github.com` reports an authenticated deploy key.
-- `app-store-connect-auth` passes with App Store Connect API key env vars or the temporary Apple ID fallback env vars documented in `docs/secrets.md`.
+- `app-store-connect-auth` is a job-time check. It passes with App Store Connect API key env vars or the temporary Apple ID fallback env vars documented in `docs/secrets.md`.

@@ -125,7 +125,7 @@ You can omit `--api-key` if `EXPOFACTO_API_KEY` is set:
 export EXPOFACTO_API_KEY=YOUR_FACTO_API_KEY
 ```
 
-The installer creates `~/facto-runner`, checks for Node.js 24+ and `npx`, installs nvm and Node.js when they are missing, then starts the hosted runner. `expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs or upgrades Homebrew/npm tools, macOS updates, and Xcode, verifies GitHub access, the iOS SDK, and App Store Connect credentials, then stops early with a clear error only when the runner cannot repair itself. Set `XCODES_USERNAME` and `XCODES_PASSWORD` for unattended Xcode installs. Add `--verbose` to the installer command to mirror redacted build output to the runner terminal as well as the controller logs.
+The installer creates `~/facto-runner`, checks for Node.js 24+ and `npx`, installs nvm and Node.js when they are missing, then starts the hosted runner. `expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs missing Homebrew tools, repairs Xcode only when it is missing or too old, verifies GitHub access and the iOS SDK, and leaves already-working tools alone. App Store Connect, EAS, and Expo checks happen when a job needs them. Set `XCODES_USERNAME` and `XCODES_PASSWORD` for unattended Xcode installs. Add `--verbose` to the installer command to mirror redacted build output to the runner terminal as well as the controller logs.
 
 Open `http://localhost:4100` for the operational status page.
 
