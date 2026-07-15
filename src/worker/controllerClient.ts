@@ -1,5 +1,5 @@
 import type { BuildJob, WorkerEventInput } from "../shared/jobTypes.js";
-import { formatHttpError, formatRequestFailure } from "./runnerErrors.js";
+import { FactoHttpError, formatHttpError, formatRequestFailure, isFactoHttpError } from "./runnerErrors.js";
 
 export type ControllerClient = {
   leaseJob: () => Promise<BuildJob | null>;
@@ -31,11 +31,15 @@ const requestJson = async <T>(url: string, token: string, options: RequestInit) 
       });
 
       if (!response.ok) {
-        throw new Error(await formatHttpError(response, { method: options.method, url }));
+        throw new FactoHttpError(await formatHttpError(response, { method: options.method, url }));
       }
 
       return (await response.json()) as T;
     } catch (error) {
+      if (isFactoHttpError(error)) {
+        throw error;
+      }
+
       lastError = error;
       await sleep(250 * attempt);
     }

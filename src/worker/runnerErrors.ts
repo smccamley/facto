@@ -10,6 +10,17 @@ const messageFromValue = (value: unknown) => {
   return "Unknown runner error";
 };
 
+export class FactoHttpError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FactoHttpError";
+  }
+}
+
+export const isFactoHttpError = (error: unknown) => {
+  return error instanceof FactoHttpError;
+};
+
 export const formatRunnerError = (error: unknown) => {
   const message = messageFromValue(error).trim();
   return message || "Unknown runner error";
