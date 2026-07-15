@@ -11,13 +11,13 @@ runner_args=()
 usage() {
   cat <<EOF
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/scripts/install-runner.sh | bash -s -- --api-key YOUR_FACTO_API_KEY
+  curl -fsSL https://expofacto.dev/i | bash -s -- -k YOUR_FACTO_API_KEY
 
   export FACTO_API_KEY=YOUR_FACTO_API_KEY
-  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/scripts/install-runner.sh | bash
+  curl -fsSL https://expofacto.dev/i | bash
 
 Options:
-  --api-key <key>          Facto hosted runner API key. Can also be FACTO_API_KEY.
+  -k, --api-key <key>      Facto hosted runner API key. Can also be FACTO_API_KEY.
   --service-url <url>      Facto service URL. Can also be FACTO_SERVICE_URL.
   --name <name>            Runner name. Can also be FACTO_RUNNER_NAME.
   --workspace <path>       Workspace root. Can also be FACTO_WORKSPACE_ROOT.
@@ -54,7 +54,7 @@ need_value() {
 
 while (($#)); do
   case "$1" in
-    --api-key)
+    -k|--api-key)
       need_value "$1" "${2:-}"
       export FACTO_API_KEY="$2"
       shift 2

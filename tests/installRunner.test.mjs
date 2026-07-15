@@ -13,7 +13,7 @@ const writeExecutable = (path, contents) => {
   chmodSync(path, 0o755);
 };
 
-const runInstaller = (args = []) => {
+const runInstaller = (args = [], env = {}) => {
   const dir = mkdtempSync(join(tmpdir(), "facto-install-runner-"));
   const binDir = join(dir, "bin");
   const argsFile = join(dir, "npx-args.txt");
@@ -34,6 +34,7 @@ const runInstaller = (args = []) => {
         FACTO_NPX_ARGS_FILE: argsFile,
         FACTO_RUNNER_DIR: join(dir, "runner"),
         PATH: `${binDir}:${process.env.PATH}`,
+        ...env,
       },
     });
 
@@ -69,4 +70,11 @@ test("install-runner forwards optional runner args", () => {
     "mac-mini-1",
     "--verbose",
   ]);
+});
+
+test("install-runner accepts the short api key flag", () => {
+  const { result, npxArgs } = runInstaller(["-k", "facto_from_flag"], { FACTO_API_KEY: "" });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(npxArgs, ["--yes", "--package", "@expofacto/cli-test", "expofacto", "start", "runner"]);
 });
