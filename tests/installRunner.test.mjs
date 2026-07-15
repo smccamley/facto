@@ -78,3 +78,17 @@ test("install-runner accepts the short api key flag", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(npxArgs, ["--yes", "--package", "@expofacto/cli-test", "expofacto", "start", "runner"]);
 });
+
+test("install-runner accepts EXPOFACTO_API_KEY", () => {
+  const { result, npxArgs } = runInstaller([], { FACTO_API_KEY: "", EXPOFACTO_API_KEY: "facto_from_env" });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(npxArgs, ["--yes", "--package", "@expofacto/cli-test", "expofacto", "start", "runner"]);
+});
+
+test("install-runner explains the documented env var when api key is missing", () => {
+  const { result } = runInstaller([], { FACTO_API_KEY: "", EXPOFACTO_API_KEY: "" });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /EXPOFACTO_API_KEY is required/);
+});

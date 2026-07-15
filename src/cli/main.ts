@@ -163,7 +163,7 @@ const postJob = async (controllerUrl: string, token: string, input: CreateJobInp
 };
 
 const startHostedRunner = async (options: CliOptions) => {
-  const apiKey = requireValue(getOption(options, "api-key") ?? process.env.FACTO_API_KEY, "api-key");
+  const apiKey = requireValue(getOption(options, "api-key") ?? process.env.EXPOFACTO_API_KEY ?? process.env.FACTO_API_KEY, "api-key");
   const serviceUrl = getOption(options, "service-url") ?? getOption(options, "url") ?? process.env.FACTO_SERVICE_URL ?? "https://expofacto.dev";
   const runnerName = getOption(options, "name") ?? process.env.FACTO_RUNNER_NAME ?? hostname();
   const workspaceRoot = getOption(options, "workspace") ?? process.env.FACTO_WORKSPACE_ROOT ?? ".facto-runner/workspaces";

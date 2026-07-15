@@ -11,13 +11,13 @@ runner_args=()
 usage() {
   cat <<EOF
 Usage:
-  curl -fsSL https://expofacto.dev/install | bash -s -- -k YOUR_FACTO_API_KEY
+  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/install-runner.sh | bash -s -- --api-key YOUR_FACTO_API_KEY
 
-  export FACTO_API_KEY=YOUR_FACTO_API_KEY
-  curl -fsSL https://expofacto.dev/install | bash
+  export EXPOFACTO_API_KEY=YOUR_FACTO_API_KEY
+  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/install-runner.sh | bash
 
 Options:
-  -k, --api-key <key>      Facto hosted runner API key. Can also be FACTO_API_KEY.
+  -k, --api-key <key>      Facto hosted runner API key. Can also be EXPOFACTO_API_KEY.
   --service-url <url>      Facto service URL. Can also be FACTO_SERVICE_URL.
   --name <name>            Runner name. Can also be FACTO_RUNNER_NAME.
   --workspace <path>       Workspace root. Can also be FACTO_WORKSPACE_ROOT.
@@ -56,6 +56,7 @@ while (($#)); do
   case "$1" in
     -k|--api-key)
       need_value "$1" "${2:-}"
+      export EXPOFACTO_API_KEY="$2"
       export FACTO_API_KEY="$2"
       shift 2
       ;;
@@ -97,8 +98,16 @@ if [[ "$(uname)" != "Darwin" ]]; then
   fail "Facto iOS runners require macOS."
 fi
 
-if [[ -z "${FACTO_API_KEY:-}" ]]; then
-  fail "FACTO_API_KEY is required. Pass --api-key or export FACTO_API_KEY before running this installer."
+if [[ -z "${EXPOFACTO_API_KEY:-}" && -n "${FACTO_API_KEY:-}" ]]; then
+  export EXPOFACTO_API_KEY="$FACTO_API_KEY"
+fi
+
+if [[ -z "${FACTO_API_KEY:-}" && -n "${EXPOFACTO_API_KEY:-}" ]]; then
+  export FACTO_API_KEY="$EXPOFACTO_API_KEY"
+fi
+
+if [[ -z "${EXPOFACTO_API_KEY:-}" ]]; then
+  fail "EXPOFACTO_API_KEY is required. Pass --api-key or export EXPOFACTO_API_KEY before running this installer."
 fi
 
 node_major() {
