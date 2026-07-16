@@ -4,6 +4,7 @@ import { hostname } from "node:os";
 import { parse as parseYaml } from "yaml";
 import { loadFactoEnv } from "../shared/envFile.js";
 import type { CreateJobInput, SubmitTarget } from "../shared/jobTypes.js";
+import { resolveDeployGitRef } from "./deployRef.js";
 import { setupProject } from "./projectSetup.js";
 import { runJob } from "../worker/runJob.js";
 import type { ControllerClient } from "../worker/controllerClient.js";
@@ -14,6 +15,14 @@ import { formatRunnerError } from "../worker/runnerErrors.js";
 loadFactoEnv([".expofacto/secrets.env", ".facto/controller.env"]);
 
 type CliOptions = Record<string, string | boolean>;
+
+type HostedJobEvent = {
+  id: string;
+  event_type: string;
+  step: string | null;
+  message: string | null;
+  created_at: string;
+};
 
 const assertSupportedNode = () => {
   const major = Number(process.versions.node.split(".")[0]);
@@ -32,6 +41,11 @@ const parseArgs = (args: string[]) => {
 
     if (arg === "-V") {
       options.verbose = true;
+      continue;
+    }
+
+    if (arg === "-h") {
+      options.help = true;
       continue;
     }
 
@@ -61,6 +75,26 @@ const getOption = (options: CliOptions, key: string) => {
 };
 
 const getBooleanOption = (options: CliOptions, key: string) => options[key] === true;
+
+const getApiToken = (options: CliOptions) => {
+  return [
+    getOption(options, "token") ?? "",
+    getOption(options, "api-key") ?? "",
+    process.env.FACTO_API_TOKEN ?? "",
+    process.env.FACTO_API_KEY ?? "",
+    process.env.EXPOFACTO_API_KEY ?? "",
+  ].find((value) => value.trim());
+};
+
+const usage = `Usage: expofacto setup | expofacto deploy | expofacto build ios | expofacto start runner [-V|--verbose]
+
+Commands:
+  setup                 Create .expofacto config and local secret templates
+  deploy                Queue an iOS build for the current pushed commit
+  build ios             Queue an iOS build using the configured/default ref
+  logs <job-id>         Print hosted build events and logs
+  start runner          Register this Mac as a hosted iOS runner
+`;
 
 const readFactoConfig = () => {
   const path = existsSync(".expofacto/config.yml") ? ".expofacto/config.yml" : "facto.yml";
@@ -126,17 +160,24 @@ const toChecks = (value: unknown) => {
   return value.filter((check): check is string => typeof check === "string");
 };
 
-const createJobInput = (options: CliOptions): CreateJobInput => {
+const createJobInput = (options: CliOptions, inputOptions: { inferCurrentCommit: boolean }): CreateJobInput => {
   const config = readFactoConfig();
   const repo = (config.repo ?? {}) as Record<string, unknown>;
   const app = (config.app ?? {}) as Record<string, unknown>;
   const ios = (config.ios ?? {}) as Record<string, unknown>;
 
+  const repoUrl = requireValue(getOption(options, "repo") ?? String(repo.url ?? ""), "repo");
+  const configuredRef = getOption(options, "ref") ?? String(repo.defaultRef ?? "main");
+
   return {
     project: requireValue(getOption(options, "project") ?? String(config.project ?? ""), "project"),
     platform: "ios",
-    repoUrl: requireValue(getOption(options, "repo") ?? String(repo.url ?? ""), "repo"),
-    gitRef: getOption(options, "ref") ?? String(repo.defaultRef ?? "main"),
+    repoUrl,
+    gitRef: resolveDeployGitRef({
+      configuredRef,
+      explicitRef: getOption(options, "ref"),
+      inferCurrentCommit: inputOptions.inferCurrentCommit,
+    }),
     appPath: getOption(options, "path") ?? String(app.path ?? "."),
     profile: getOption(options, "profile") ?? String(ios.profile ?? "production"),
     submit: toSubmitTarget(getOption(options, "submit") ?? String(ios.submit ?? "")),
@@ -160,6 +201,26 @@ const postJob = async (controllerUrl: string, token: string, input: CreateJobInp
   }
 
   return (await response.json()) as { job: { id: string }; url: string };
+};
+
+const fetchJobLogs = async (controllerUrl: string, token: string, jobId: string) => {
+  const response = await fetch(`${controllerUrl.replace(/\/$/, "")}/api/jobs/${jobId}/events`, {
+    headers: {
+      authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Log fetch failed with ${response.status}: ${await response.text()}`);
+  }
+
+  return (await response.json()) as { events: HostedJobEvent[] };
+};
+
+export const formatJobEventLine = (event: HostedJobEvent) => {
+  const step = event.step ? `${event.step}: ` : "";
+  const message = event.message ?? "";
+  return `${event.created_at} ${event.event_type} ${step}${message}`.trim();
 };
 
 const startHostedRunner = async (options: CliOptions) => {
@@ -219,6 +280,11 @@ const main = async () => {
   const { positional, options } = parseArgs(process.argv.slice(2));
   const command = positional[0];
 
+  if (getBooleanOption(options, "help") || command === "help") {
+    console.log(usage);
+    return;
+  }
+
   if (command === "setup") {
     const result = setupProject();
 
@@ -243,13 +309,26 @@ const main = async () => {
     return;
   }
 
+  if (command === "logs") {
+    const jobId = requireValue(positional[1], "job-id");
+    const controllerUrl = requireValue(getOption(options, "controller-url") ?? process.env.FACTO_CONTROLLER_URL, "controller-url");
+    const token = requireValue(getApiToken(options), "token");
+    const result = await fetchJobLogs(controllerUrl, token, jobId);
+
+    for (const event of result.events) {
+      console.log(formatJobEventLine(event));
+    }
+
+    return;
+  }
+
   if (command !== "deploy" && (positional[0] !== "build" || positional[1] !== "ios")) {
-    throw new Error("Usage: expofacto setup | expofacto deploy | expofacto build ios | expofacto start runner [-V|--verbose]");
+    throw new Error(usage.trim());
   }
 
   const controllerUrl = requireValue(getOption(options, "controller-url") ?? process.env.FACTO_CONTROLLER_URL, "controller-url");
-  const token = requireValue(getOption(options, "token") ?? process.env.FACTO_API_TOKEN, "token");
-  const result = await postJob(controllerUrl, token, createJobInput(options));
+  const token = requireValue(getApiToken(options), "token");
+  const result = await postJob(controllerUrl, token, createJobInput(options, { inferCurrentCommit: command === "deploy" }));
   console.log(`${controllerUrl.replace(/\/$/, "")}/api/jobs/${result.job.id}`);
 };
 

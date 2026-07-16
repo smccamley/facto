@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import type { BuildJob } from "../shared/jobTypes.js";
@@ -15,6 +15,37 @@ const commandForShell = (command: string) => {
   return { name, args };
 };
 
+export const easBuildArgs = (job: Pick<BuildJob, "profile">, artifactPath: string, options: { verbose?: boolean } = {}) => [
+  "--yes",
+  "--package",
+  "eas-cli@latest",
+  "eas",
+  "build",
+  "--platform",
+  "ios",
+  "--profile",
+  job.profile,
+  "--local",
+  "--output",
+  artifactPath,
+  "--non-interactive",
+  "--freeze-credentials",
+  ...(options.verbose ? ["--verbose-logs"] : []),
+];
+
+export const easSubmitArgs = (artifactPath: string) => [
+  "--yes",
+  "--package",
+  "eas-cli@latest",
+  "eas",
+  "submit",
+  "--platform",
+  "ios",
+  "--path",
+  artifactPath,
+  "--non-interactive",
+];
+
 const runStep = async (
   client: ControllerClient,
   job: BuildJob,
@@ -23,7 +54,8 @@ const runStep = async (
   command: string,
   args: string[],
   env?: NodeJS.ProcessEnv,
-  options: RunJobOptions = {}
+  options: RunJobOptions = {},
+  stepOptions: { reportFailure?: boolean } = {}
 ) => {
   if (options.signal?.aborted) {
     throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Runner was killed remotely");
@@ -38,24 +70,49 @@ const runStep = async (
   await client.sendEvent(job.id, { type: "step.started", step });
   const exitCode = await runCommand({ jobId: job.id, step, command, args, cwd, env, client, verbose: options.verbose, signal: options.signal });
   const status = exitCode === 0 ? "complete" : "failed";
-  await client.sendEvent(job.id, { type: "step.finished", step, status, exitCode });
 
   if (exitCode !== 0) {
+    if (stepOptions.reportFailure !== false) {
+      await client.sendEvent(job.id, { type: "step.finished", step, status, exitCode });
+    }
+
     throw new Error(`${step} failed with exit code ${exitCode}`);
   }
+
+  await client.sendEvent(job.id, { type: "step.finished", step, status, exitCode });
 };
 
-const checkoutRepo = async (client: ControllerClient, job: BuildJob, repoPath: string, options: RunJobOptions = {}) => {
+const logLine = async (client: ControllerClient, job: BuildJob, step: string, line: string) => {
+  await client.sendEvent(job.id, { type: "log.line", step, line });
+};
+
+const checkoutAttempt = async (client: ControllerClient, job: BuildJob, repoPath: string, options: RunJobOptions = {}) => {
   const parentPath = resolve(repoPath, "..");
   mkdirSync(parentPath, { recursive: true });
 
   if (!existsSync(join(repoPath, ".git"))) {
-    await runStep(client, job, "checkout", parentPath, "git", ["clone", job.repoUrl, repoPath], undefined, options);
+    await runStep(client, job, "checkout", parentPath, "git", ["clone", job.repoUrl, repoPath], undefined, options, { reportFailure: false });
   } else {
-    await runStep(client, job, "checkout", repoPath, "git", ["fetch", "--prune", "origin"], undefined, options);
+    await runStep(client, job, "checkout", repoPath, "git", ["fetch", "--prune", "origin"], undefined, options, { reportFailure: false });
   }
 
-  await runStep(client, job, "checkout", repoPath, "git", ["checkout", "--force", job.gitRef], undefined, options);
+  await runStep(client, job, "checkout", repoPath, "git", ["checkout", "--force", job.gitRef], undefined, options, { reportFailure: false });
+  await runStep(client, job, "checkout", repoPath, "git", ["reset", "--hard", job.gitRef], undefined, options, { reportFailure: false });
+  await runStep(client, job, "checkout", repoPath, "git", ["clean", "-ffdx"], undefined, options, { reportFailure: false });
+};
+
+const checkoutRepo = async (client: ControllerClient, job: BuildJob, repoPath: string, options: RunJobOptions = {}) => {
+  try {
+    await checkoutAttempt(client, job, repoPath, options);
+  } catch (error) {
+    if (options.signal?.aborted || (error instanceof Error && error.message === "Job was cancelled")) {
+      throw error;
+    }
+
+    await logLine(client, job, "checkout", `Checkout repair failed; recloning workspace. ${error instanceof Error ? error.message : ""}`.trim());
+    rmSync(repoPath, { recursive: true, force: true });
+    await checkoutAttempt(client, job, repoPath, options);
+  }
 };
 
 const getCommitSha = async (client: ControllerClient, job: BuildJob, repoPath: string) => {
@@ -68,8 +125,6 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
   const repoPath = join(workspaceRoot, job.project, "repo");
   const artifactPath = join(repoPath, job.appPath, ".facto", "artifacts", `${job.project}.ipa`);
   const appPath = join(repoPath, job.appPath);
-  const easVerboseArgs = options.verbose ? ["--verbose"] : [];
-
   try {
     if (options.verbose) {
       console.log(`[${job.id}] leased ${job.project} ${job.gitRef}`);
@@ -77,6 +132,7 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
 
     await checkoutRepo(client, job, repoPath, options);
     const commitSha = await getCommitSha(client, job, repoPath);
+    await logLine(client, job, "diagnostics", `cwd ${appPath}`);
     await runStep(client, job, "install", appPath, "npm", ["ci"], undefined, options);
 
     for (const check of job.checks) {
@@ -86,20 +142,7 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
 
     await runStep(client, job, "prebuild", appPath, "npx", ["expo", "prebuild", "--platform", "ios"], { CI: "1" }, options);
     mkdirSync(dirname(artifactPath), { recursive: true });
-    await runStep(client, job, "build", appPath, "npx", [
-      "eas-cli@latest",
-      "build",
-      "--platform",
-      "ios",
-      "--profile",
-      job.profile,
-      "--local",
-      "--output",
-      artifactPath,
-      "--non-interactive",
-      "--freeze-credentials",
-      ...easVerboseArgs,
-    ], undefined, options);
+    await runStep(client, job, "build", appPath, "npx", easBuildArgs(job, artifactPath, { verbose: options.verbose }), undefined, options);
 
     if (existsSync(artifactPath)) {
       await client.registerArtifact(job.id, {
@@ -110,18 +153,7 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
     }
 
     if (job.submit === "testflight") {
-      await runStep(client, job, "submit", appPath, "npx", [
-        "eas-cli@latest",
-        "submit",
-        "--platform",
-        "ios",
-        "--profile",
-        job.profile,
-        "--path",
-        artifactPath,
-        "--non-interactive",
-        ...easVerboseArgs,
-      ], undefined, options);
+      await runStep(client, job, "submit", appPath, "npx", easSubmitArgs(artifactPath), undefined, options);
     }
 
     await client.sendEvent(job.id, { type: "job.finished", status: "complete", commitSha });

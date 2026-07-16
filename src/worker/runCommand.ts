@@ -100,8 +100,30 @@ export const runCommand = async (options: RunCommandOptions) => {
   });
 
   return await new Promise<number>((resolve, reject) => {
-    child.on("error", reject);
+    let settled = false;
+
+    child.on("error", async (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      options.signal?.removeEventListener("abort", killChild);
+      await sendQueue;
+      await options.client.sendEvent(options.jobId, {
+        type: "log.line",
+        step: options.step,
+        line: redact(`Unable to start ${options.command}: ${error.message}`),
+      });
+      resolve(127);
+    });
+
     child.on("close", async (exitCode) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
       options.signal?.removeEventListener("abort", killChild);
       await sendQueue;
 
