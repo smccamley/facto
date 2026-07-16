@@ -77,13 +77,8 @@ const getOption = (options: CliOptions, key: string) => {
 const getBooleanOption = (options: CliOptions, key: string) => options[key] === true;
 
 const getApiToken = (options: CliOptions) => {
-  return [
-    getOption(options, "token") ?? "",
-    getOption(options, "api-key") ?? "",
-    process.env.FACTO_API_TOKEN ?? "",
-    process.env.FACTO_API_KEY ?? "",
-    process.env.EXPOFACTO_API_KEY ?? "",
-  ].find((value) => value.trim());
+  const token = getOption(options, "token") ?? process.env.FACTO_API_TOKEN;
+  return token?.trim() ? token : undefined;
 };
 
 const usage = `Usage: expofacto setup | expofacto deploy | expofacto build ios | expofacto start runner [-V|--verbose]
@@ -176,7 +171,7 @@ const createJobInput = (options: CliOptions, inputOptions: { inferCurrentCommit:
     gitRef: resolveDeployGitRef({
       configuredRef,
       explicitRef: getOption(options, "ref"),
-      inferCurrentCommit: inputOptions.inferCurrentCommit,
+      preferCurrentCommit: inputOptions.inferCurrentCommit,
     }),
     appPath: getOption(options, "path") ?? String(app.path ?? "."),
     profile: getOption(options, "profile") ?? String(ios.profile ?? "production"),
@@ -224,7 +219,7 @@ export const formatJobEventLine = (event: HostedJobEvent) => {
 };
 
 const startHostedRunner = async (options: CliOptions) => {
-  const apiKey = requireValue(getOption(options, "api-key") ?? process.env.EXPOFACTO_API_KEY ?? process.env.FACTO_API_KEY, "api-key");
+  const apiKey = requireValue(getOption(options, "api-key") ?? process.env.EXPOFACTO_API_KEY, "api-key");
   const serviceUrl = getOption(options, "service-url") ?? getOption(options, "url") ?? process.env.FACTO_SERVICE_URL ?? "https://expofacto.dev";
   const runnerName = getOption(options, "name") ?? process.env.FACTO_RUNNER_NAME ?? hostname();
   const workspaceRoot = getOption(options, "workspace") ?? process.env.FACTO_WORKSPACE_ROOT ?? ".facto-runner/workspaces";

@@ -4,17 +4,21 @@ import { resolveDeployGitRef } from "../dist/cli/deployRef.js";
 
 const fakeGit = (responses) => (args) => responses[args.join(" ")] ?? "";
 
-test("deploy ref uses explicit ref without git inspection", () => {
+test("deploy ref resolves explicit refs to pushed commits", () => {
+  const sha = "f6a1430488ac300f115e265a8bd5a70f23f7d221";
+
   assert.equal(
     resolveDeployGitRef({
       configuredRef: "main",
       explicitRef: "release/ios",
-      inferCurrentCommit: true,
-      git: () => {
-        throw new Error("git should not run");
-      },
+      preferCurrentCommit: true,
+      git: fakeGit({
+        "rev-parse --verify release/ios^{commit}": sha,
+        "fetch --quiet origin": "",
+        [`branch -r --contains ${sha}`]: "  origin/release/ios\n",
+      }),
     }),
-    "release/ios"
+    sha
   );
 });
 
@@ -24,9 +28,9 @@ test("deploy ref pins the current pushed commit by default", () => {
   assert.equal(
     resolveDeployGitRef({
       configuredRef: "main",
-      inferCurrentCommit: true,
+      preferCurrentCommit: true,
       git: fakeGit({
-        "rev-parse --verify HEAD": sha,
+        "rev-parse --verify HEAD^{commit}": sha,
         "fetch --quiet origin": "",
         [`branch -r --contains ${sha}`]: "  origin/main\n",
       }),
@@ -42,26 +46,42 @@ test("deploy ref fails before queueing when current commit is not on origin", ()
     () =>
       resolveDeployGitRef({
         configuredRef: "main",
-        inferCurrentCommit: true,
+        preferCurrentCommit: true,
         git: fakeGit({
-          "rev-parse --verify HEAD": sha,
+          "rev-parse --verify HEAD^{commit}": sha,
           "fetch --quiet origin": "",
           [`branch -r --contains ${sha}`]: "",
         }),
       }),
-    /Commit f6a1430488ac is not available on origin/
+    /Commit f6a1430488ac from HEAD is not available on origin/
   );
 });
 
-test("build ios keeps configured ref instead of inferring local commit", () => {
+test("build ios resolves the configured ref to a pushed commit", () => {
+  const sha = "1b2f430488ac300f115e265a8bd5a70f23f7d999";
+
   assert.equal(
     resolveDeployGitRef({
       configuredRef: "main",
-      inferCurrentCommit: false,
-      git: () => {
-        throw new Error("git should not run");
-      },
+      preferCurrentCommit: false,
+      git: fakeGit({
+        "rev-parse --verify main^{commit}": sha,
+        "fetch --quiet origin": "",
+        [`branch -r --contains ${sha}`]: "  origin/main\n",
+      }),
     }),
-    "main"
+    sha
+  );
+});
+
+test("build ios fails when the configured ref cannot resolve to a commit", () => {
+  assert.throws(
+    () =>
+      resolveDeployGitRef({
+        configuredRef: "main",
+        preferCurrentCommit: false,
+        git: fakeGit({}),
+      }),
+    /Could not resolve Git ref main to a full commit SHA/
   );
 });

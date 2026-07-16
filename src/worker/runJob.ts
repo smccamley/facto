@@ -10,6 +10,13 @@ type RunJobOptions = {
   verbose?: boolean;
 };
 
+export type ToolchainCheck = {
+  name: string;
+  command: string;
+  args: string[];
+  hint: string;
+};
+
 const commandForShell = (command: string) => {
   const [name, ...args] = command.split(" ").filter(Boolean);
   return { name, args };
@@ -33,7 +40,7 @@ export const easBuildArgs = (job: Pick<BuildJob, "profile">, artifactPath: strin
   ...(options.verbose ? ["--verbose-logs"] : []),
 ];
 
-export const easSubmitArgs = (artifactPath: string) => [
+export const easSubmitArgs = (job: Pick<BuildJob, "profile">, artifactPath: string) => [
   "--yes",
   "--package",
   "eas-cli@latest",
@@ -41,10 +48,65 @@ export const easSubmitArgs = (artifactPath: string) => [
   "submit",
   "--platform",
   "ios",
+  "--profile",
+  job.profile,
   "--path",
   artifactPath,
   "--non-interactive",
 ];
+
+export const jobToolchainChecks = (): ToolchainCheck[] => [
+  {
+    name: "Git",
+    command: "git",
+    args: ["--version"],
+    hint: "Install Git and make sure it is on PATH before starting the runner.",
+  },
+  {
+    name: "npm",
+    command: "npm",
+    args: ["--version"],
+    hint: "Install Node.js with npm and make sure npm is on PATH before starting the runner.",
+  },
+  {
+    name: "npx",
+    command: "npx",
+    args: ["--version"],
+    hint: "Install Node.js with npx and make sure npx is on PATH before starting the runner.",
+  },
+  {
+    name: "EAS CLI package mode",
+    command: "npx",
+    args: ["--yes", "--package", "eas-cli@latest", "eas", "--version"],
+    hint: "Make sure npx can install and run eas-cli@latest; check network access and npm registry authentication.",
+  },
+];
+
+const validateJobToolchain = async (client: ControllerClient, job: BuildJob, cwd: string, options: RunJobOptions = {}) => {
+  const step = "preflight";
+
+  await client.sendEvent(job.id, { type: "step.started", step });
+
+  try {
+    for (const check of jobToolchainChecks()) {
+      await logLine(client, job, step, `Checking ${check.name}`);
+
+      try {
+        execFileSync(check.command, check.args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      } catch {
+        throw new Error(`${check.name} is required before running a job. ${check.hint}`);
+      }
+    }
+
+    await client.sendEvent(job.id, { type: "step.finished", step, status: "complete", exitCode: 0 });
+  } catch (error) {
+    const summary = error instanceof Error ? error.message : "Runner toolchain validation failed.";
+
+    await logLine(client, job, step, summary);
+    await client.sendEvent(job.id, { type: "step.finished", step, status: "failed", exitCode: 1 });
+    throw new Error(summary);
+  }
+};
 
 const runStep = async (
   client: ControllerClient,
@@ -130,6 +192,8 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
       console.log(`[${job.id}] leased ${job.project} ${job.gitRef}`);
     }
 
+    mkdirSync(workspaceRoot, { recursive: true });
+    await validateJobToolchain(client, job, workspaceRoot, options);
     await checkoutRepo(client, job, repoPath, options);
     const commitSha = await getCommitSha(client, job, repoPath);
     await logLine(client, job, "diagnostics", `cwd ${appPath}`);
@@ -153,7 +217,7 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
     }
 
     if (job.submit === "testflight") {
-      await runStep(client, job, "submit", appPath, "npx", easSubmitArgs(artifactPath), undefined, options);
+      await runStep(client, job, "submit", appPath, "npx", easSubmitArgs(job, artifactPath), undefined, options);
     }
 
     await client.sendEvent(job.id, { type: "job.finished", status: "complete", commitSha });

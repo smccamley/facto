@@ -12,25 +12,28 @@ const runGit: GitCommand = (args) => {
 
 const shortSha = (sha: string) => sha.slice(0, 12);
 
-export const resolveDeployGitRef = (options: {
-  configuredRef: string;
-  explicitRef?: string;
-  git?: GitCommand;
-  inferCurrentCommit: boolean;
-}) => {
+const commitShaPattern = /^[0-9a-f]{40}$/i;
+
+const refName = (options: { configuredRef: string; explicitRef?: string; preferCurrentCommit: boolean }) => {
   if (options.explicitRef) {
     return options.explicitRef;
   }
 
-  if (!options.inferCurrentCommit) {
-    return options.configuredRef;
-  }
+  return options.preferCurrentCommit ? "HEAD" : options.configuredRef;
+};
 
+export const resolveDeployGitRef = (options: {
+  configuredRef: string;
+  explicitRef?: string;
+  git?: GitCommand;
+  preferCurrentCommit: boolean;
+}) => {
   const git = options.git ?? runGit;
-  const commitSha = git(["rev-parse", "--verify", "HEAD"]);
+  const targetRef = refName(options);
+  const commitSha = git(["rev-parse", "--verify", `${targetRef}^{commit}`]);
 
-  if (!commitSha) {
-    return options.configuredRef;
+  if (!commitSha || !commitShaPattern.test(commitSha)) {
+    throw new Error(`Could not resolve Git ref ${targetRef} to a full commit SHA. Fetch it locally, or pass a commit SHA with --ref.`);
   }
 
   const fetchOutput = git(["fetch", "--quiet", "origin"]);
@@ -38,7 +41,7 @@ export const resolveDeployGitRef = (options: {
 
   if (!containingBranches.trim()) {
     const hint = fetchOutput ? ` Git output: ${fetchOutput}` : "";
-    throw new Error(`Commit ${shortSha(commitSha)} is not available on origin. Push it before deploying, or pass --ref explicitly.${hint}`);
+    throw new Error(`Commit ${shortSha(commitSha)} from ${targetRef} is not available on origin. Push it before queueing the build.${hint}`);
   }
 
   return commitSha;

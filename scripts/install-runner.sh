@@ -57,7 +57,6 @@ while (($#)); do
     -k|--api-key)
       need_value "$1" "${2:-}"
       export EXPOFACTO_API_KEY="$2"
-      export FACTO_API_KEY="$2"
       shift 2
       ;;
     --service-url|--url)
@@ -96,14 +95,6 @@ done
 
 if [[ "$(uname)" != "Darwin" ]]; then
   fail "Facto iOS runners require macOS."
-fi
-
-if [[ -z "${EXPOFACTO_API_KEY:-}" && -n "${FACTO_API_KEY:-}" ]]; then
-  export EXPOFACTO_API_KEY="$FACTO_API_KEY"
-fi
-
-if [[ -z "${FACTO_API_KEY:-}" && -n "${EXPOFACTO_API_KEY:-}" ]]; then
-  export FACTO_API_KEY="$EXPOFACTO_API_KEY"
 fi
 
 if [[ -z "${EXPOFACTO_API_KEY:-}" ]]; then

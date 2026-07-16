@@ -40,4 +40,4 @@ npx eas-cli@latest build --platform ios --profile production --local
 
 ## Keep in mind
 
-Expo Facto builds Git refs. Commit and push the app state you want to build, or pass an exact commit SHA with `--ref`.
+Expo Facto queues pinned Git commits. Commit and push the app state you want to build; the CLI resolves `--ref` or the configured default ref to a full commit SHA before creating the job.

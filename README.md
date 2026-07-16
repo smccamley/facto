@@ -40,7 +40,7 @@ Result: an iOS IPA built with `eas build --local` on your Mac worker instead of 
 - **Works with real Expo apps.** The worker runs install, checks, prebuild, local EAS build, and optional EAS Submit.
 - **Good for frequent iteration.** Build as often as your Mac can handle while testing app binaries on devices.
 - **Drop-in app setup.** `npm run setup` creates `.expofacto/config.yml`, `.expofacto/secrets.env`, and deploy scripts.
-- **Plain infrastructure.** A Node controller, a polling worker, SQLite job state, and normal Git refs.
+- **Plain infrastructure.** A Node controller, a polling worker, SQLite job state, and pinned Git commits.
 
 ## What It Solves
 
@@ -80,6 +80,18 @@ Deploy:
 ```bash
 npm run deploy
 ```
+
+`FACTO_API_TOKEN` is the local controller bearer token used by `deploy`, `build ios`, and local controller job creation. Hosted runner registration uses a separate dashboard API key: pass it with `--api-key`, or set `EXPOFACTO_API_KEY` before running the hosted runner installer.
+
+Read hosted job events:
+
+```bash
+npx --package @expofacto/cli expofacto logs JOB_ID \
+  --controller-url https://expofacto.dev \
+  --token YOUR_DASHBOARD_API_KEY
+```
+
+The `logs` command reads `GET /api/jobs/:jobId/events` and prints the recorded build events in timestamp order.
 
 ## Local Controller And Worker
 
@@ -125,7 +137,7 @@ You can omit `--api-key` if `EXPOFACTO_API_KEY` is set:
 export EXPOFACTO_API_KEY=YOUR_FACTO_API_KEY
 ```
 
-The installer creates `~/facto-runner`, checks for Node.js 24+ and `npx`, installs nvm and Node.js when they are missing, then starts the hosted runner. `expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs missing Homebrew tools, repairs Xcode only when it is missing or too old, verifies GitHub access and the iOS SDK, and leaves already-working tools alone. App Store Connect, EAS, and Expo checks happen when a job needs them. Set `XCODES_USERNAME` and `XCODES_PASSWORD` for unattended Xcode installs. Add `--verbose` to the installer command to mirror redacted build output to the runner terminal as well as the controller logs.
+The installer creates `~/facto-runner`, checks for Node.js 24+ and `npx`, installs nvm and Node.js when they are missing, then starts the hosted runner. `expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs missing Homebrew tools, repairs Xcode only when it is missing or too old, verifies GitHub access and the iOS SDK, and leaves already-working tools alone. Each leased job also validates `git`, `npm`, `npx`, and the `npx --package eas-cli@latest eas` entrypoint before checkout starts. App Store Connect credentials are checked when a job needs them. Set `XCODES_USERNAME` and `XCODES_PASSWORD` for unattended Xcode installs. Add `--verbose` to the installer command to mirror redacted build output to the runner terminal as well as the controller logs.
 
 Open `http://localhost:4100` for the operational status page.
 

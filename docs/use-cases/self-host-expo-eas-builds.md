@@ -4,6 +4,8 @@ Use Expo Facto when you want Expo's app workflow but do not want every iOS binar
 
 Expo Facto runs a controller and one or more Mac workers. The CLI submits a build job, the worker checks out the requested Git ref, runs your checks, runs `expo prebuild`, runs `eas build --local`, and stores the IPA path on completion.
 
+Before queueing, the CLI resolves the requested Git ref to a full pushed commit SHA. The worker validates `git`, `npm`, `npx`, and `npx --package eas-cli@latest eas` before checkout so missing tools fail early with actionable logs.
+
 ## Install in an Expo app
 
 ```bash

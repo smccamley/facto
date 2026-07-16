@@ -35,7 +35,7 @@ The worker needs the same credentials a normal non-interactive EAS Submit flow n
 
 1. The worker builds an IPA with `eas build --local`.
 2. The IPA is saved under `.facto/artifacts`.
-3. The worker runs `eas submit --platform ios`.
+3. The worker runs `eas submit --platform ios --profile <profile>`.
 4. App Store Connect processes the uploaded binary for TestFlight.
 
 Apple processing can take time after upload. Expo Facto reports the submit step output from EAS CLI.

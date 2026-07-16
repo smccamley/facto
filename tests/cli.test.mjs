@@ -71,8 +71,7 @@ test("logs fetches hosted job events with the API token", async () => {
     const result = await runNode(["dist/cli/main.js", "logs", "job-1"], {
       cwd: packageRoot,
       env: {
-        FACTO_API_KEY: "facto_test",
-        FACTO_API_TOKEN: "",
+        FACTO_API_TOKEN: "facto_test",
         FACTO_CONTROLLER_URL: `http://127.0.0.1:${address.port}`,
         FACTO_ENV_FILE: "/tmp/facto-cli-test-no-env-file",
         PATH: process.env.PATH,
@@ -85,4 +84,20 @@ test("logs fetches hosted job events with the API token", async () => {
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
+});
+
+test("logs does not fall back to the hosted runner API key env var", async () => {
+  const result = await runNode(["dist/cli/main.js", "logs", "job-1"], {
+    cwd: packageRoot,
+    env: {
+      FACTO_API_KEY: "facto_legacy",
+      FACTO_API_TOKEN: "",
+      FACTO_CONTROLLER_URL: "http://127.0.0.1:9",
+      FACTO_ENV_FILE: "/tmp/facto-cli-test-no-env-file",
+      PATH: process.env.PATH,
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /token is required/);
 });

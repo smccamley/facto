@@ -29,7 +29,7 @@ const runInstaller = (args = [], env = {}) => {
       encoding: "utf8",
       env: {
         ...process.env,
-        FACTO_API_KEY: "facto_test_key",
+        EXPOFACTO_API_KEY: "facto_test_key",
         FACTO_CLI_PACKAGE: "@expofacto/cli-test",
         FACTO_NPX_ARGS_FILE: argsFile,
         FACTO_RUNNER_DIR: join(dir, "runner"),
@@ -73,21 +73,28 @@ test("install-runner forwards optional runner args", () => {
 });
 
 test("install-runner accepts the short api key flag", () => {
-  const { result, npxArgs } = runInstaller(["-k", "facto_from_flag"], { FACTO_API_KEY: "" });
+  const { result, npxArgs } = runInstaller(["-k", "facto_from_flag"], { EXPOFACTO_API_KEY: "" });
 
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(npxArgs, ["--yes", "--package", "@expofacto/cli-test", "expofacto", "start", "runner"]);
 });
 
 test("install-runner accepts EXPOFACTO_API_KEY", () => {
-  const { result, npxArgs } = runInstaller([], { FACTO_API_KEY: "", EXPOFACTO_API_KEY: "facto_from_env" });
+  const { result, npxArgs } = runInstaller([], { EXPOFACTO_API_KEY: "facto_from_env" });
 
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(npxArgs, ["--yes", "--package", "@expofacto/cli-test", "expofacto", "start", "runner"]);
 });
 
+test("install-runner does not fall back to FACTO_API_KEY", () => {
+  const { result } = runInstaller([], { EXPOFACTO_API_KEY: "", FACTO_API_KEY: "facto_legacy" });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /EXPOFACTO_API_KEY is required/);
+});
+
 test("install-runner explains the documented env var when api key is missing", () => {
-  const { result } = runInstaller([], { FACTO_API_KEY: "", EXPOFACTO_API_KEY: "" });
+  const { result } = runInstaller([], { EXPOFACTO_API_KEY: "" });
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /EXPOFACTO_API_KEY is required/);
