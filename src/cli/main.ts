@@ -25,8 +25,12 @@ type HostedJobEvent = {
   created_at: string;
 };
 
+type EnvCommand = "create" | "update" | "delete";
+type EnvVisibility = "plaintext" | "sensitive" | "secret";
+
 const hostedControllerUrl = "https://expofacto.dev";
 const expofactoConfigPath = "expofacto.json";
+const envVisibilities = new Set<EnvVisibility>(["plaintext", "sensitive", "secret"]);
 
 const assertSupportedNode = () => {
   const major = Number(process.versions.node.split(".")[0]);
@@ -105,9 +109,12 @@ const assertSupportedOptions = (options: CliOptions, allowed: string[]) => {
 const usage = `Usage: expofacto setup | expofacto deploy | expofacto build --platform ios | expofacto start runner [-V|--verbose]
 
 Commands:
-  setup                 Create local secret templates and package scripts
+  setup                 Create package scripts
   deploy                Queue an iOS build for the current pushed commit
   build                 Queue a build using EAS-style flags
+  env:create            Create an Expo Facto account env value
+  env:update            Update an Expo Facto account env value
+  env:delete            Delete an Expo Facto account env value
   logs <job-id>         Print hosted build events and logs
   start runner          Register this Mac as a hosted iOS runner
 `;
@@ -269,6 +276,83 @@ const postJob = async (controllerUrl: string, apiKey: string, input: CreateJobIn
   return (await response.json()) as { job: { id: string }; url: string; warning?: string | null };
 };
 
+const parseEnvCommand = (command: string | undefined): EnvCommand | undefined => {
+  if (command === "env:create") {
+    return "create";
+  }
+
+  if (command === "env:update") {
+    return "update";
+  }
+
+  if (command === "env:delete") {
+    return "delete";
+  }
+
+  return undefined;
+};
+
+const getEnvVisibility = (options: CliOptions): EnvVisibility => {
+  const visibility = getOption(options, "visibility") ?? "secret";
+
+  if (!envVisibilities.has(visibility as EnvVisibility)) {
+    throw new Error("--visibility must be plaintext, sensitive, or secret");
+  }
+
+  return visibility as EnvVisibility;
+};
+
+const requestJson = async (
+  url: string,
+  apiKey: string,
+  method: "POST" | "PATCH" | "DELETE",
+  body: Record<string, string | undefined>
+) => {
+  const response = await fetch(url, {
+    method,
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Env ${method.toLowerCase()} failed with ${response.status}: ${await response.text()}`);
+  }
+
+  return response.json();
+};
+
+const runEnvCommand = async (command: EnvCommand, options: CliOptions) => {
+  assertSupportedOptions(options, ["api-key", "controller-url", "name", "value", "environment", "visibility"]);
+
+  const controllerUrl = getControllerUrl(options).replace(/\/$/, "");
+  const apiKey = requireValue(getApiKey(options), "api-key or EXPOFACTO_API_KEY");
+  const name = requireValue(getOption(options, "name"), "name");
+  const environment = getOption(options, "environment");
+  const url = `${controllerUrl}/api/env`;
+
+  if (command === "delete") {
+    await requestJson(url, apiKey, "DELETE", { name, environment });
+    console.log(`deleted ${name}`);
+    return;
+  }
+
+  const value = requireValue(getOption(options, "value"), "value");
+  const visibility = getEnvVisibility(options);
+  const method = command === "create" ? "POST" : "PATCH";
+
+  await requestJson(url, apiKey, method, {
+    name,
+    value,
+    environment: environment ?? "production",
+    visibility,
+  });
+
+  console.log(`${command === "create" ? "created" : "updated"} ${name} in ${environment ?? "production"}`);
+};
+
 const fetchJobLogs = async (controllerUrl: string, apiKey: string, jobId: string) => {
   const response = await fetch(`${controllerUrl.replace(/\/$/, "")}/api/jobs/${jobId}/events`, {
     headers: {
@@ -381,6 +465,13 @@ const main = async () => {
       console.log(formatJobEventLine(event));
     }
 
+    return;
+  }
+
+  const envCommand = parseEnvCommand(command);
+
+  if (envCommand) {
+    await runEnvCommand(envCommand, options);
     return;
   }
 

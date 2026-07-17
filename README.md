@@ -27,6 +27,16 @@ npx --package @expofacto/cli expofacto build \
   --auto-submit
 ```
 
+Before the first build can run, save the Expo access token that runners use to call EAS:
+
+```bash
+npx --package @expofacto/cli expofacto env:create \
+  --name EXPO_TOKEN \
+  --value "$EXPO_TOKEN" \
+  --environment production \
+  --visibility secret
+```
+
 Result: an iOS IPA built with `eas build --local` on your Mac worker instead of Expo's remote build infrastructure.
 
 ## Why Engineers Use It
@@ -84,6 +94,38 @@ npm run deploy
 
 `EXPOFACTO_API_KEY` is the Expo Facto API key used by `deploy`, `build`, log reads, and runner registration. API keys are shown once in the dashboard, and any valid key for the account can submit jobs or start a runner.
 
+## Account Env Values
+
+Expo Facto copies the EAS env command shape so Expo users do not need to learn new muscle memory, but these commands manage Expo Facto account values. They do not create or update Expo EAS environment variables.
+
+Create the `EXPO_TOKEN` that runners need for local EAS builds:
+
+```bash
+npx --package @expofacto/cli expofacto env:create \
+  --name EXPO_TOKEN \
+  --value "$EXPO_TOKEN" \
+  --environment production \
+  --visibility secret
+```
+
+Update it:
+
+```bash
+npx --package @expofacto/cli expofacto env:update \
+  --name EXPO_TOKEN \
+  --value "$EXPO_TOKEN" \
+  --environment production \
+  --visibility secret
+```
+
+Delete it:
+
+```bash
+npx --package @expofacto/cli expofacto env:delete --name EXPO_TOKEN
+```
+
+All three commands authenticate with `--api-key "$EXPOFACTO_API_KEY"` or the `EXPOFACTO_API_KEY` environment variable. Values are sent to the hosted Expo Facto service and are not printed back to the terminal.
+
 Read hosted job events:
 
 ```bash
@@ -132,7 +174,7 @@ The installer creates `~/facto-runner`, checks for Node.js 24+ and `npx`, instal
 - CI runs install, typecheck, tests, build, and package preview.
 - npm publishes from GitHub Actions with provenance.
 - Minimal runtime dependencies.
-- Secrets are loaded from env files and redacted from worker logs.
+- Expo Facto account env values are stored encrypted by the hosted service and redacted from worker logs.
 
 See [docs/secrets.md](docs/secrets.md) for credential setup and storage.
 
@@ -140,6 +182,5 @@ See [docs/secrets.md](docs/secrets.md) for credential setup and storage.
 
 - Scaleway provisioning.
 - `launchd` installation.
-- Controller-side encrypted secret storage.
 - App Store Connect API key management.
 - Warm-build change classification.

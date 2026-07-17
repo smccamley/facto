@@ -88,6 +88,110 @@ test("logs fetches hosted job events with EXPOFACTO_API_KEY", async () => {
   }
 });
 
+test("env commands manage Expo Facto account values with EAS-shaped flags", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      requests.push({
+        method: request.method,
+        url: request.url,
+        authorization: request.headers.authorization,
+        body: body ? JSON.parse(body) : null,
+      });
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true }));
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const controllerUrl = `http://127.0.0.1:${address.port}`;
+  const env = {
+    EXPOFACTO_API_KEY: "facto_test",
+    FACTO_ENV_FILE: "/tmp/facto-cli-test-no-env-file",
+    PATH: process.env.PATH,
+  };
+
+  try {
+    const createResult = await runNode(
+      [
+        cliPath,
+        "env:create",
+        "--controller-url",
+        controllerUrl,
+        "--name",
+        "EXPO_TOKEN",
+        "--value",
+        "expo_secret_token",
+        "--environment",
+        "production",
+        "--visibility",
+        "secret",
+      ],
+      { cwd: packageRoot, env }
+    );
+    const updateResult = await runNode(
+      [
+        cliPath,
+        "env:update",
+        "--controller-url",
+        controllerUrl,
+        "--api-key",
+        "facto_override",
+        "--name",
+        "EXPO_TOKEN",
+        "--value",
+        "new_secret",
+        "--environment",
+        "production",
+        "--visibility",
+        "secret",
+      ],
+      { cwd: packageRoot, env }
+    );
+    const deleteResult = await runNode(
+      [cliPath, "env:delete", "--controller-url", controllerUrl, "--name", "EXPO_TOKEN"],
+      { cwd: packageRoot, env }
+    );
+
+    assert.equal(createResult.status, 0, createResult.stderr);
+    assert.equal(updateResult.status, 0, updateResult.stderr);
+    assert.equal(deleteResult.status, 0, deleteResult.stderr);
+    assert.match(createResult.stdout, /created EXPO_TOKEN in production/);
+    assert.doesNotMatch(createResult.stdout, /expo_secret_token/);
+    assert.match(updateResult.stdout, /updated EXPO_TOKEN in production/);
+    assert.match(deleteResult.stdout, /deleted EXPO_TOKEN/);
+    assert.deepEqual(
+      requests.map((request) => [request.method, request.url, request.authorization]),
+      [
+        ["POST", "/api/env", "Bearer facto_test"],
+        ["PATCH", "/api/env", "Bearer facto_override"],
+        ["DELETE", "/api/env", "Bearer facto_test"],
+      ]
+    );
+    assert.deepEqual(requests[0].body, {
+      name: "EXPO_TOKEN",
+      value: "expo_secret_token",
+      environment: "production",
+      visibility: "secret",
+    });
+    assert.deepEqual(requests[1].body, {
+      name: "EXPO_TOKEN",
+      value: "new_secret",
+      environment: "production",
+      visibility: "secret",
+    });
+    assert.deepEqual(requests[2].body, { name: "EXPO_TOKEN" });
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test("build accepts the EAS-shaped platform flag", async () => {
   const result = await runNode([cliPath, "build", "--platform", "ios", "--profile", "production"], {
     cwd: packageRoot,
