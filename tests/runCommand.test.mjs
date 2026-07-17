@@ -56,7 +56,7 @@ printf 'ok\\n'
     );
 
     process.env.PATH = `${binDir}:${oldPath}`;
-    process.env.npm_config_package = "@expofacto/cli@0.1.234";
+    process.env.npm_config_package = "@expofacto/cli@0.1.476";
 
     const events = [];
     const exitCode = await runCommand({

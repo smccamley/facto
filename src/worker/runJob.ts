@@ -30,9 +30,6 @@ const commandForShell = (command: string) => {
 };
 
 export const easBuildArgs = (job: Pick<BuildJob, "profile">, artifactPath: string, options: { verbose?: boolean } = {}) => [
-  "--yes",
-  "--package",
-  "eas-cli@latest",
   "eas",
   "build",
   "--platform",
@@ -48,9 +45,6 @@ export const easBuildArgs = (job: Pick<BuildJob, "profile">, artifactPath: strin
 ];
 
 export const easSubmitArgs = (job: Pick<BuildJob, "profile">, artifactPath: string) => [
-  "--yes",
-  "--package",
-  "eas-cli@latest",
   "eas",
   "submit",
   "--platform",
@@ -63,9 +57,6 @@ export const easSubmitArgs = (job: Pick<BuildJob, "profile">, artifactPath: stri
 ];
 
 const easEnvPullArgs = (environment: string, path: string) => [
-  "--yes",
-  "--package",
-  "eas-cli@latest",
   "eas",
   "env:pull",
   "--environment",
@@ -74,6 +65,8 @@ const easEnvPullArgs = (environment: string, path: string) => [
   path,
   "--non-interactive",
 ];
+
+export const easCliInstallArgs = () => ["install", "--no-save", "--no-package-lock", "eas-cli@latest"];
 
 export const jobToolchainChecks = (): ToolchainCheck[] => [
   {
@@ -95,10 +88,10 @@ export const jobToolchainChecks = (): ToolchainCheck[] => [
     hint: "Install Node.js with npx and make sure npx is on PATH before starting the runner.",
   },
   {
-    name: "EAS CLI package mode",
-    command: "npx",
-    args: ["--yes", "--package", "eas-cli@latest", "eas", "--version"],
-    hint: "Make sure npx can install and run eas-cli@latest; check network access and npm registry authentication.",
+    name: "EAS CLI package",
+    command: "npm",
+    args: ["view", "eas-cli", "version"],
+    hint: "Make sure npm can resolve eas-cli from the configured registry before running jobs.",
   },
 ];
 
@@ -308,6 +301,7 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
     const commitSha = await getCommitSha(client, job, repoPath);
     await logLine(client, job, "diagnostics", `cwd ${appPath}`);
     await runStep(client, job, "install", appPath, "npm", ["ci"], job.env, options);
+    await runStep(client, job, "tooling", appPath, "npm", easCliInstallArgs(), job.env, options);
     const easEnv = { ...job.env, ...(await loadEasEnvironment(client, job, appPath, options)) };
 
     for (const check of job.checks) {

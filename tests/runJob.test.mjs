@@ -3,33 +3,36 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { easBuildArgs, easSubmitArgs, jobToolchainChecks, resolveEasEnvironment, runJob } from "../dist/worker/runJob.js";
+import { easBuildArgs, easCliInstallArgs, easSubmitArgs, jobToolchainChecks, resolveEasEnvironment, runJob } from "../dist/worker/runJob.js";
 
 const writeExecutable = (path, contents) => {
   writeFileSync(path, contents);
   chmodSync(path, 0o755);
 };
 
-test("EAS build runs through the eas binary resolved by npx package mode", () => {
+test("EAS build runs through the local eas binary", () => {
   const args = easBuildArgs({ profile: "production" }, "/tmp/ppl.ipa", { verbose: true });
 
-  assert.deepEqual(args.slice(0, 5), ["--yes", "--package", "eas-cli@latest", "eas", "build"]);
+  assert.deepEqual(args.slice(0, 2), ["eas", "build"]);
+  assert.ok(!args.includes("--package"));
   assert.ok(args.includes("--verbose-logs"));
   assert.ok(!args.includes("--verbose"));
 });
 
-test("toolchain preflight validates the same EAS CLI package-mode entrypoint used by builds", () => {
-  const easCheck = jobToolchainChecks().find((check) => check.name === "EAS CLI package mode");
+test("toolchain preflight validates that the EAS CLI package can be resolved", () => {
+  const easCheck = jobToolchainChecks().find((check) => check.name === "EAS CLI package");
 
-  assert.deepEqual(easCheck?.args, ["--yes", "--package", "eas-cli@latest", "eas", "--version"]);
-  assert.equal(easBuildArgs({ profile: "production" }, "/tmp/ppl.ipa")[3], "eas");
+  assert.deepEqual(easCheck?.args, ["view", "eas-cli", "version"]);
+  assert.deepEqual(easCliInstallArgs(), ["install", "--no-save", "--no-package-lock", "eas-cli@latest"]);
+  assert.equal(easBuildArgs({ profile: "production" }, "/tmp/ppl.ipa")[0], "eas");
 });
 
 test("EAS submit runs through the eas binary and does not inherit build verbosity", () => {
   const args = easSubmitArgs({ profile: "production" }, "/tmp/ppl.ipa");
 
-  assert.deepEqual(args.slice(0, 5), ["--yes", "--package", "eas-cli@latest", "eas", "submit"]);
-  assert.deepEqual(args.slice(5, 9), ["--platform", "ios", "--profile", "production"]);
+  assert.deepEqual(args.slice(0, 2), ["eas", "submit"]);
+  assert.deepEqual(args.slice(2, 6), ["--platform", "ios", "--profile", "production"]);
+  assert.ok(!args.includes("--package"));
   assert.ok(!args.includes("--verbose"));
   assert.ok(!args.includes("--verbose-logs"));
 });
@@ -153,6 +156,10 @@ if [[ "$1" == "--version" ]]; then
   printf '10.0.0\\n'
   exit 0
 fi
+if [[ "$1" == "view" ]]; then
+  printf '99.0.0\\n'
+  exit 0
+fi
 touch "${installMarker}"
 `
     );
@@ -160,11 +167,11 @@ touch "${installMarker}"
       join(binDir, "npx"),
       `#!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == "--version" || "\${5:-}" == "--version" ]]; then
+if [[ "$1" == "--version" || "\${2:-}" == "--version" ]]; then
   printf 'ok\\n'
   exit 0
 fi
-if [[ "\${4:-}" == "eas" && "\${5:-}" == "env:pull" ]]; then
+if [[ "$1" == "eas" && "$2" == "env:pull" ]]; then
   if [[ ! -f "${installMarker}" ]]; then
     printf 'node_modules missing\\n' >&2
     exit 42
@@ -181,7 +188,7 @@ if [[ "\${4:-}" == "eas" && "\${5:-}" == "env:pull" ]]; then
   printf 'EXPO_PUBLIC_API_URL=https://api.example.test\\n' > "$env_path"
   exit 0
 fi
-if [[ "\${4:-}" == "eas" && "\${5:-}" == "build" ]]; then
+if [[ "$1" == "eas" && "$2" == "build" ]]; then
   output_path=""
   for ((i = 1; i <= $#; i++)); do
     if [[ "\${!i}" == "--output" ]]; then
@@ -320,6 +327,10 @@ if [[ "$1" == "--version" ]]; then
   printf '10.0.0\\n'
   exit 0
 fi
+if [[ "$1" == "view" ]]; then
+  printf '99.0.0\\n'
+  exit 0
+fi
 printf 'install=%s\\n' "\${EXPO_PUBLIC_API_URL:-}" >> "${envRecord}"
 `
     );
@@ -331,11 +342,11 @@ if [[ "$1" == "--version" ]]; then
   printf '10.0.0\\n'
   exit 0
 fi
-if [[ "\${4:-}" == "eas" && "\${5:-}" == "--version" ]]; then
+if [[ "$1" == "eas" && "$2" == "--version" ]]; then
   printf 'eas-cli/99.0.0\\n'
   exit 0
 fi
-if [[ "\${4:-}" == "eas" && "\${5:-}" == "env:pull" ]]; then
+if [[ "$1" == "eas" && "$2" == "env:pull" ]]; then
   env_path=""
   for ((i = 1; i <= $#; i++)); do
     if [[ "\${!i}" == "--path" ]]; then
@@ -351,7 +362,7 @@ if [[ "$1" == "expo" && "$2" == "prebuild" ]]; then
   printf 'prebuild=%s\\n' "$EXPO_PUBLIC_API_URL" >> "${envRecord}"
   exit 0
 fi
-if [[ "\${4:-}" == "eas" && "\${5:-}" == "build" ]]; then
+if [[ "$1" == "eas" && "$2" == "build" ]]; then
   printf 'build=%s\\n' "$EXPO_PUBLIC_API_URL" >> "${envRecord}"
   output_path=""
   for ((i = 1; i <= $#; i++)); do

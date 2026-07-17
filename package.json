@@ -1,6 +1,6 @@
 {
   "name": "@expofacto/cli",
-  "version": "0.1.234",
+  "version": "0.1.476",
   "description": "Self-host Expo EAS iOS builds on Mac hardware you control.",
   "license": "MIT",
   "type": "module",
