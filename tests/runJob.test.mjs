@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { easBuildArgs, easCliInstallArgs, easSubmitArgs, jobToolchainChecks, resolveEasEnvironment, runJob } from "../dist/worker/runJob.js";
+import { easBuildArgs, easCliBinPath, easCliInstallArgs, easSubmitArgs, jobToolchainChecks, resolveEasEnvironment, runJob } from "../dist/worker/runJob.js";
 
 const writeExecutable = (path, contents) => {
   writeFileSync(path, contents);
@@ -13,7 +13,7 @@ const writeExecutable = (path, contents) => {
 test("EAS build runs through the local eas binary", () => {
   const args = easBuildArgs({ profile: "production" }, "/tmp/ppl.ipa", { verbose: true });
 
-  assert.deepEqual(args.slice(0, 2), ["eas", "build"]);
+  assert.equal(args[0], "build");
   assert.ok(!args.includes("--package"));
   assert.ok(args.includes("--verbose-logs"));
   assert.ok(!args.includes("--verbose"));
@@ -21,17 +21,19 @@ test("EAS build runs through the local eas binary", () => {
 
 test("toolchain preflight validates that the EAS CLI package can be resolved", () => {
   const easCheck = jobToolchainChecks().find((check) => check.name === "EAS CLI package");
+  const toolPath = "/tmp/facto-eas-cli";
 
   assert.deepEqual(easCheck?.args, ["view", "eas-cli", "version"]);
-  assert.deepEqual(easCliInstallArgs(), ["install", "--no-save", "--no-package-lock", "eas-cli@latest"]);
-  assert.equal(easBuildArgs({ profile: "production" }, "/tmp/ppl.ipa")[0], "eas");
+  assert.deepEqual(easCliInstallArgs(toolPath), ["install", "--prefix", toolPath, "--no-save", "--no-package-lock", "eas-cli@latest"]);
+  assert.equal(easCliBinPath(toolPath), join(toolPath, "node_modules", ".bin", "eas"));
+  assert.equal(easBuildArgs({ profile: "production" }, "/tmp/ppl.ipa")[0], "build");
 });
 
 test("EAS submit runs through the eas binary and does not inherit build verbosity", () => {
   const args = easSubmitArgs({ profile: "production" }, "/tmp/ppl.ipa");
 
-  assert.deepEqual(args.slice(0, 2), ["eas", "submit"]);
-  assert.deepEqual(args.slice(2, 6), ["--platform", "ios", "--profile", "production"]);
+  assert.equal(args[0], "submit");
+  assert.deepEqual(args.slice(1, 5), ["--platform", "ios", "--profile", "production"]);
   assert.ok(!args.includes("--package"));
   assert.ok(!args.includes("--verbose"));
   assert.ok(!args.includes("--verbose-logs"));
@@ -160,18 +162,19 @@ if [[ "$1" == "view" ]]; then
   printf '99.0.0\\n'
   exit 0
 fi
-touch "${installMarker}"
-`
-    );
-    writeExecutable(
-      join(binDir, "npx"),
-      `#!/usr/bin/env bash
+if [[ "$1" == "install" ]]; then
+  prefix=""
+  for ((i = 1; i <= $#; i++)); do
+    if [[ "\${!i}" == "--prefix" ]]; then
+      next=$((i + 1))
+      prefix="\${!next}"
+    fi
+  done
+  mkdir -p "$prefix/node_modules/.bin"
+  cat > "$prefix/node_modules/.bin/eas" <<'EAS'
+#!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == "--version" || "\${2:-}" == "--version" ]]; then
-  printf 'ok\\n'
-  exit 0
-fi
-if [[ "$1" == "eas" && "$2" == "env:pull" ]]; then
+if [[ "$1" == "env:pull" ]]; then
   if [[ ! -f "${installMarker}" ]]; then
     printf 'node_modules missing\\n' >&2
     exit 42
@@ -188,7 +191,7 @@ if [[ "$1" == "eas" && "$2" == "env:pull" ]]; then
   printf 'EXPO_PUBLIC_API_URL=https://api.example.test\\n' > "$env_path"
   exit 0
 fi
-if [[ "$1" == "eas" && "$2" == "build" ]]; then
+if [[ "$1" == "build" ]]; then
   output_path=""
   for ((i = 1; i <= $#; i++)); do
     if [[ "\${!i}" == "--output" ]]; then
@@ -198,6 +201,20 @@ if [[ "$1" == "eas" && "$2" == "build" ]]; then
   done
   mkdir -p "$(dirname "$output_path")"
   printf 'ipa' > "$output_path"
+fi
+EAS
+  chmod +x "$prefix/node_modules/.bin/eas"
+fi
+touch "${installMarker}"
+`
+    );
+    writeExecutable(
+      join(binDir, "npx"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "--version" || "\${2:-}" == "--version" ]]; then
+  printf 'ok\\n'
+  exit 0
 fi
 `
     );
@@ -260,7 +277,25 @@ esac
 exit 0
 `
     );
-    writeExecutable(join(binDir, "npm"), "#!/usr/bin/env bash\nexit 0\n");
+    writeExecutable(
+      join(binDir, "npm"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "install" ]]; then
+  prefix=""
+  for ((i = 1; i <= $#; i++)); do
+    if [[ "\${!i}" == "--prefix" ]]; then
+      next=$((i + 1))
+      prefix="\${!next}"
+    fi
+  done
+  mkdir -p "$prefix/node_modules/.bin"
+  printf '#!/usr/bin/env bash\\nexit 0\\n' > "$prefix/node_modules/.bin/eas"
+  chmod +x "$prefix/node_modules/.bin/eas"
+fi
+exit 0
+`
+    );
     writeExecutable(join(binDir, "npx"), "#!/usr/bin/env bash\nexit 0\n");
     process.env.PATH = `${binDir}:${oldPath}`;
 
@@ -331,22 +366,19 @@ if [[ "$1" == "view" ]]; then
   printf '99.0.0\\n'
   exit 0
 fi
-printf 'install=%s\\n' "\${EXPO_PUBLIC_API_URL:-}" >> "${envRecord}"
-`
-    );
-    writeExecutable(
-      join(binDir, "npx"),
-      `#!/usr/bin/env bash
+if [[ "$1" == "install" ]]; then
+  prefix=""
+  for ((i = 1; i <= $#; i++)); do
+    if [[ "\${!i}" == "--prefix" ]]; then
+      next=$((i + 1))
+      prefix="\${!next}"
+    fi
+  done
+  mkdir -p "$prefix/node_modules/.bin"
+  cat > "$prefix/node_modules/.bin/eas" <<'EAS'
+#!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == "--version" ]]; then
-  printf '10.0.0\\n'
-  exit 0
-fi
-if [[ "$1" == "eas" && "$2" == "--version" ]]; then
-  printf 'eas-cli/99.0.0\\n'
-  exit 0
-fi
-if [[ "$1" == "eas" && "$2" == "env:pull" ]]; then
+if [[ "$1" == "env:pull" ]]; then
   env_path=""
   for ((i = 1; i <= $#; i++)); do
     if [[ "\${!i}" == "--path" ]]; then
@@ -358,11 +390,7 @@ if [[ "$1" == "eas" && "$2" == "env:pull" ]]; then
   printf 'EXPO_PUBLIC_API_URL=https://api.example.test\\nAPP_VARIANT=production\\n' > "$env_path"
   exit 0
 fi
-if [[ "$1" == "expo" && "$2" == "prebuild" ]]; then
-  printf 'prebuild=%s\\n' "$EXPO_PUBLIC_API_URL" >> "${envRecord}"
-  exit 0
-fi
-if [[ "$1" == "eas" && "$2" == "build" ]]; then
+if [[ "$1" == "build" ]]; then
   printf 'build=%s\\n' "$EXPO_PUBLIC_API_URL" >> "${envRecord}"
   output_path=""
   for ((i = 1; i <= $#; i++)); do
@@ -373,6 +401,24 @@ if [[ "$1" == "eas" && "$2" == "build" ]]; then
   done
   mkdir -p "$(dirname "$output_path")"
   printf 'ipa' > "$output_path"
+  exit 0
+fi
+EAS
+  chmod +x "$prefix/node_modules/.bin/eas"
+fi
+printf 'install=%s\\n' "\${EXPO_PUBLIC_API_URL:-}" >> "${envRecord}"
+`
+    );
+    writeExecutable(
+      join(binDir, "npx"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "--version" ]]; then
+  printf '10.0.0\\n'
+  exit 0
+fi
+if [[ "$1" == "expo" && "$2" == "prebuild" ]]; then
+  printf 'prebuild=%s\\n' "$EXPO_PUBLIC_API_URL" >> "${envRecord}"
   exit 0
 fi
 exit 0

@@ -30,7 +30,6 @@ const commandForShell = (command: string) => {
 };
 
 export const easBuildArgs = (job: Pick<BuildJob, "profile">, artifactPath: string, options: { verbose?: boolean } = {}) => [
-  "eas",
   "build",
   "--platform",
   "ios",
@@ -45,7 +44,6 @@ export const easBuildArgs = (job: Pick<BuildJob, "profile">, artifactPath: strin
 ];
 
 export const easSubmitArgs = (job: Pick<BuildJob, "profile">, artifactPath: string) => [
-  "eas",
   "submit",
   "--platform",
   "ios",
@@ -57,7 +55,6 @@ export const easSubmitArgs = (job: Pick<BuildJob, "profile">, artifactPath: stri
 ];
 
 const easEnvPullArgs = (environment: string, path: string) => [
-  "eas",
   "env:pull",
   "--environment",
   environment,
@@ -66,7 +63,9 @@ const easEnvPullArgs = (environment: string, path: string) => [
   "--non-interactive",
 ];
 
-export const easCliInstallArgs = () => ["install", "--no-save", "--no-package-lock", "eas-cli@latest"];
+export const easCliInstallArgs = (toolPath: string) => ["install", "--prefix", toolPath, "--no-save", "--no-package-lock", "eas-cli@latest"];
+
+export const easCliBinPath = (toolPath: string) => join(toolPath, "node_modules", ".bin", process.platform === "win32" ? "eas.cmd" : "eas");
 
 export const jobToolchainChecks = (): ToolchainCheck[] => [
   {
@@ -239,12 +238,12 @@ export const resolveEasEnvironment = (appPath: string, profileName: string) => {
   return "production";
 };
 
-const loadEasEnvironment = async (client: ControllerClient, job: BuildJob, appPath: string, options: RunJobOptions = {}) => {
+const loadEasEnvironment = async (client: ControllerClient, job: BuildJob, appPath: string, easCommand: string, options: RunJobOptions = {}) => {
   const environment = resolveEasEnvironment(appPath, job.profile);
   const envPath = join(appPath, ".facto", "eas-env");
 
   mkdirSync(dirname(envPath), { recursive: true });
-  await runStep(client, job, "environment", appPath, "npx", easEnvPullArgs(environment, envPath), job.env, options);
+  await runStep(client, job, "environment", appPath, easCommand, easEnvPullArgs(environment, envPath), job.env, options);
 
   const env = parseEnvFile(envPath);
   await logLine(client, job, "environment", `Loaded readable EAS environment variables for ${environment}`);
@@ -290,6 +289,8 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
   const repoPath = join(workspaceRoot, job.project, "repo");
   const artifactPath = join(repoPath, job.appPath, ".facto", "artifacts", `${job.project}.ipa`);
   const appPath = join(repoPath, job.appPath);
+  const easToolPath = join(appPath, ".facto", "tools", "eas-cli");
+  const easCommand = easCliBinPath(easToolPath);
   try {
     if (options.verbose) {
       console.log(`[${job.id}] leased ${job.project} ${job.gitRef}`);
@@ -301,8 +302,8 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
     const commitSha = await getCommitSha(client, job, repoPath);
     await logLine(client, job, "diagnostics", `cwd ${appPath}`);
     await runStep(client, job, "install", appPath, "npm", ["ci"], job.env, options);
-    await runStep(client, job, "tooling", appPath, "npm", easCliInstallArgs(), job.env, options);
-    const easEnv = { ...job.env, ...(await loadEasEnvironment(client, job, appPath, options)) };
+    await runStep(client, job, "tooling", appPath, "npm", easCliInstallArgs(easToolPath), job.env, options);
+    const easEnv = { ...job.env, ...(await loadEasEnvironment(client, job, appPath, easCommand, options)) };
 
     for (const check of job.checks) {
       const { name, args } = commandForShell(check);
@@ -311,7 +312,7 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
 
     await runStep(client, job, "prebuild", appPath, "npx", ["expo", "prebuild", "--platform", "ios"], { ...easEnv, CI: "1" }, options);
     mkdirSync(dirname(artifactPath), { recursive: true });
-    await runStep(client, job, "build", appPath, "npx", easBuildArgs(job, artifactPath, { verbose: options.verbose }), easEnv, options);
+    await runStep(client, job, "build", appPath, easCommand, easBuildArgs(job, artifactPath, { verbose: options.verbose }), easEnv, options);
 
     if (existsSync(artifactPath)) {
       await client.registerArtifact(job.id, {
@@ -322,7 +323,7 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
     }
 
     if (job.submit === "testflight") {
-      await runStep(client, job, "submit", appPath, "npx", easSubmitArgs(job, artifactPath), easEnv, options);
+      await runStep(client, job, "submit", appPath, easCommand, easSubmitArgs(job, artifactPath), easEnv, options);
     }
 
     await client.sendEvent(job.id, { type: "job.finished", status: "complete", commitSha });
