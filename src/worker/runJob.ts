@@ -307,8 +307,8 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
     await checkoutRepo(client, job, repoPath, options);
     const commitSha = await getCommitSha(client, job, repoPath);
     await logLine(client, job, "diagnostics", `cwd ${appPath}`);
+    await runStep(client, job, "install", appPath, "npm", ["ci"], job.env, options);
     const easEnv = { ...job.env, ...(await loadEasEnvironment(client, job, appPath, options)) };
-    await runStep(client, job, "install", appPath, "npm", ["ci"], easEnv, options);
 
     for (const check of job.checks) {
       const { name, args } = commandForShell(check);

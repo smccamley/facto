@@ -127,6 +127,7 @@ test("runner uses leased EXPO_TOKEN to pull EAS environment variables", async ()
   const dir = mkdtempSync(join(tmpdir(), "facto-run-job-token-"));
   const binDir = join(dir, "bin");
   const workspaceRoot = join(dir, "workspaces");
+  const installMarker = join(dir, "install-complete");
   const tokenRecord = join(dir, "token-record");
   const oldPath = process.env.PATH;
 
@@ -144,7 +145,17 @@ case "$1" in
 esac
 `
     );
-    writeExecutable(join(binDir, "npm"), "#!/usr/bin/env bash\nexit 0\n");
+    writeExecutable(
+      join(binDir, "npm"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "--version" ]]; then
+  printf '10.0.0\\n'
+  exit 0
+fi
+touch "${installMarker}"
+`
+    );
     writeExecutable(
       join(binDir, "npx"),
       `#!/usr/bin/env bash
@@ -154,6 +165,10 @@ if [[ "$1" == "--version" || "\${5:-}" == "--version" ]]; then
   exit 0
 fi
 if [[ "\${4:-}" == "eas" && "\${5:-}" == "env:pull" ]]; then
+  if [[ ! -f "${installMarker}" ]]; then
+    printf 'node_modules missing\\n' >&2
+    exit 42
+  fi
   printf '%s\\n' "$EXPO_TOKEN" > "${tokenRecord}"
   env_path=""
   for ((i = 1; i <= $#; i++)); do
@@ -305,7 +320,7 @@ if [[ "$1" == "--version" ]]; then
   printf '10.0.0\\n'
   exit 0
 fi
-printf 'install=%s\\n' "$EXPO_PUBLIC_API_URL" >> "${envRecord}"
+printf 'install=%s\\n' "\${EXPO_PUBLIC_API_URL:-}" >> "${envRecord}"
 `
     );
     writeExecutable(
@@ -366,7 +381,7 @@ exit 0
       workspaceRoot
     );
 
-    assert.match(readFileSync(envRecord, "utf8"), /install=https:\/\/api\.example\.test/);
+    assert.match(readFileSync(envRecord, "utf8"), /install=\n/);
     assert.match(readFileSync(envRecord, "utf8"), /prebuild=https:\/\/api\.example\.test/);
     assert.match(readFileSync(envRecord, "utf8"), /build=https:\/\/api\.example\.test/);
     assert.ok(

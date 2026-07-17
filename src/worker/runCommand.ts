@@ -22,12 +22,20 @@ const splitLines = (text: string, previous: string) => {
 
 const stepPrefix = (step: string) => `${step}: `;
 
+const commandEnv = (env?: NodeJS.ProcessEnv) => {
+  const nextEnv = { ...process.env, ...env };
+
+  delete nextEnv.npm_config_package;
+
+  return nextEnv;
+};
+
 export const runCommand = async (options: RunCommandOptions) => {
   if (options.signal?.aborted) {
     throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Runner was killed remotely");
   }
 
-  const env = { ...process.env, ...options.env };
+  const env = commandEnv(options.env);
   const redact = createRedactor(env);
   let stdoutBuffer = "";
   let stderrBuffer = "";
