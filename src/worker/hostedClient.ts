@@ -16,6 +16,7 @@ type HostedJob = {
   app_path: string;
   profile: string;
   submit: string;
+  env?: Record<string, string>;
   status: string;
   runner_id: string | null;
   created_at: string;
@@ -96,6 +97,7 @@ export const mapHostedJob = (job: HostedJob): BuildJob => ({
   profile: job.profile,
   submit: toSubmitTarget(job.submit),
   checks: [],
+  env: job.env,
   status: job.status === "leased" ? "leased" : "queued",
   currentStep: null,
   triggerSource: "hosted",

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
-import { parse as parseYaml } from "yaml";
+import { basename, relative, sep } from "node:path";
 import { loadFactoEnv } from "../shared/envFile.js";
-import type { CreateJobInput, SubmitTarget } from "../shared/jobTypes.js";
+import type { CreateJobInput } from "../shared/jobTypes.js";
 import { resolveDeployGitRef } from "./deployRef.js";
 import { setupProject } from "./projectSetup.js";
 import { runJob } from "../worker/runJob.js";
@@ -12,7 +13,7 @@ import { createHostedRunnerClient, isRunnerKillRequestedError } from "../worker/
 import { runRunnerPreflight } from "../worker/preflight.js";
 import { formatRunnerError } from "../worker/runnerErrors.js";
 
-loadFactoEnv([".expofacto/secrets.env", ".facto/controller.env"]);
+loadFactoEnv([".facto/controller.env"]);
 
 type CliOptions = Record<string, string | boolean>;
 
@@ -23,6 +24,9 @@ type HostedJobEvent = {
   message: string | null;
   created_at: string;
 };
+
+const hostedControllerUrl = "https://expofacto.dev";
+const expofactoConfigPath = "expofacto.json";
 
 const assertSupportedNode = () => {
   const major = Number(process.versions.node.split(".")[0]);
@@ -54,7 +58,13 @@ const parseArgs = (args: string[]) => {
       continue;
     }
 
-    const key = arg.slice(2);
+    const [key, inlineValue] = arg.slice(2).split("=", 2);
+
+    if (inlineValue !== undefined) {
+      options[key] = inlineValue;
+      continue;
+    }
+
     const next = args[index + 1];
 
     if (!next || next.startsWith("--")) {
@@ -76,30 +86,31 @@ const getOption = (options: CliOptions, key: string) => {
 
 const getBooleanOption = (options: CliOptions, key: string) => options[key] === true;
 
-const getApiToken = (options: CliOptions) => {
-  const token = getOption(options, "token") ?? process.env.FACTO_API_TOKEN;
-  return token?.trim() ? token : undefined;
+const getApiKey = (options: CliOptions) => {
+  const apiKey = getOption(options, "api-key") ?? process.env.EXPOFACTO_API_KEY;
+  return apiKey?.trim() ? apiKey : undefined;
 };
 
-const usage = `Usage: expofacto setup | expofacto deploy | expofacto build ios | expofacto start runner [-V|--verbose]
+const getControllerUrl = (options: CliOptions) => getOption(options, "controller-url") ?? hostedControllerUrl;
+
+const assertSupportedOptions = (options: CliOptions, allowed: string[]) => {
+  const allowedOptions = new Set(allowed);
+  const unsupported = Object.keys(options).filter((key) => !allowedOptions.has(key));
+
+  if (unsupported.length > 0) {
+    throw new Error(`Unsupported option --${unsupported[0]}`);
+  }
+};
+
+const usage = `Usage: expofacto setup | expofacto deploy | expofacto build --platform ios | expofacto start runner [-V|--verbose]
 
 Commands:
-  setup                 Create .expofacto config and local secret templates
+  setup                 Create local secret templates and package scripts
   deploy                Queue an iOS build for the current pushed commit
-  build ios             Queue an iOS build using the configured/default ref
+  build                 Queue a build using EAS-style flags
   logs <job-id>         Print hosted build events and logs
   start runner          Register this Mac as a hosted iOS runner
 `;
-
-const readFactoConfig = () => {
-  const path = existsSync(".expofacto/config.yml") ? ".expofacto/config.yml" : "facto.yml";
-
-  if (!existsSync(path)) {
-    return {};
-  }
-
-  return parseYaml(readFileSync(path, "utf8")) as Record<string, unknown>;
-};
 
 const requireValue = (value: string | undefined, name: string) => {
   if (!value) {
@@ -107,6 +118,42 @@ const requireValue = (value: string | undefined, name: string) => {
   }
 
   return value;
+};
+
+type PackageJson = {
+  name?: string;
+};
+
+type ExpofactoConfig = {
+  build?: {
+    ios?: {
+      prebuild?: unknown;
+    };
+  };
+};
+
+const readPackageJson = (): PackageJson => {
+  if (!existsSync("package.json")) {
+    return {};
+  }
+
+  return JSON.parse(readFileSync("package.json", "utf8")) as PackageJson;
+};
+
+const readExpofactoConfig = (): ExpofactoConfig => {
+  if (!existsSync(expofactoConfigPath)) {
+    return {};
+  }
+
+  return JSON.parse(readFileSync(expofactoConfigPath, "utf8")) as ExpofactoConfig;
+};
+
+const runGit = (args: string[]) => {
+  try {
+    return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
 };
 
 const sleep = async (milliseconds: number) => {
@@ -145,48 +192,72 @@ const acknowledgeRunnerKill = async (client: ControllerClient) => {
   console.log("Runner was killed remotely; exiting.");
 };
 
-const toSubmitTarget = (value: string | undefined): SubmitTarget => (value === "testflight" ? "testflight" : "none");
+const getPlatform = (options: CliOptions): "ios" => {
+  const platform = getOption(options, "platform") ?? "ios";
 
-const toChecks = (value: unknown) => {
-  if (!Array.isArray(value)) {
+  if (platform !== "ios") {
+    throw new Error("Expo Facto currently supports --platform ios");
+  }
+
+  return platform;
+};
+
+const projectNameFromPackage = (packageJson: PackageJson) => {
+  return packageJson.name?.replace(/^@[^/]+\//, "") || basename(process.cwd());
+};
+
+const inferAppPath = () => {
+  const gitRoot = runGit(["rev-parse", "--show-toplevel"]);
+
+  if (!gitRoot) {
+    return ".";
+  }
+
+  const appPath = relative(gitRoot, process.cwd()) || ".";
+  return appPath.split(sep).join("/");
+};
+
+const prebuildChecks = (config: ExpofactoConfig) => {
+  const prebuild = config.build?.ios?.prebuild;
+
+  if (prebuild === undefined) {
     return undefined;
   }
 
-  return value.filter((check): check is string => typeof check === "string");
+  if (!Array.isArray(prebuild) || prebuild.some((command) => typeof command !== "string" || !command.trim())) {
+    throw new Error(`${expofactoConfigPath} build.ios.prebuild must be an array of commands`);
+  }
+
+  return prebuild;
 };
 
-const createJobInput = (options: CliOptions, inputOptions: { inferCurrentCommit: boolean }): CreateJobInput => {
-  const config = readFactoConfig();
-  const repo = (config.repo ?? {}) as Record<string, unknown>;
-  const app = (config.app ?? {}) as Record<string, unknown>;
-  const ios = (config.ios ?? {}) as Record<string, unknown>;
-
-  const repoUrl = requireValue(getOption(options, "repo") ?? String(repo.url ?? ""), "repo");
-  const configuredRef = getOption(options, "ref") ?? String(repo.defaultRef ?? "main");
+const createJobInput = (options: CliOptions): CreateJobInput => {
+  const packageJson = readPackageJson();
+  const expofactoConfig = readExpofactoConfig();
+  const repoUrl = requireValue(runGit(["remote", "get-url", "origin"]), "git origin remote");
 
   return {
-    project: requireValue(getOption(options, "project") ?? String(config.project ?? ""), "project"),
-    platform: "ios",
+    project: projectNameFromPackage(packageJson),
+    platform: getPlatform(options),
     repoUrl,
     gitRef: resolveDeployGitRef({
-      configuredRef,
-      explicitRef: getOption(options, "ref"),
-      preferCurrentCommit: inputOptions.inferCurrentCommit,
+      configuredRef: "HEAD",
+      preferCurrentCommit: true,
     }),
-    appPath: getOption(options, "path") ?? String(app.path ?? "."),
-    profile: getOption(options, "profile") ?? String(ios.profile ?? "production"),
-    submit: toSubmitTarget(getOption(options, "submit") ?? String(ios.submit ?? "")),
-    checks: toChecks(config.checks),
+    appPath: inferAppPath(),
+    profile: getOption(options, "profile") ?? "production",
+    submit: getBooleanOption(options, "auto-submit") ? "testflight" : "none",
+    checks: prebuildChecks(expofactoConfig),
     triggerSource: "cli",
   };
 };
 
-const postJob = async (controllerUrl: string, token: string, input: CreateJobInput) => {
+const postJob = async (controllerUrl: string, apiKey: string, input: CreateJobInput) => {
   const response = await fetch(`${controllerUrl.replace(/\/$/, "")}/api/jobs`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${token}`,
+      authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(input),
   });
@@ -195,13 +266,13 @@ const postJob = async (controllerUrl: string, token: string, input: CreateJobInp
     throw new Error(`Job creation failed with ${response.status}: ${await response.text()}`);
   }
 
-  return (await response.json()) as { job: { id: string }; url: string };
+  return (await response.json()) as { job: { id: string }; url: string; warning?: string | null };
 };
 
-const fetchJobLogs = async (controllerUrl: string, token: string, jobId: string) => {
+const fetchJobLogs = async (controllerUrl: string, apiKey: string, jobId: string) => {
   const response = await fetch(`${controllerUrl.replace(/\/$/, "")}/api/jobs/${jobId}/events`, {
     headers: {
-      authorization: `Bearer ${token}`,
+      authorization: `Bearer ${apiKey}`,
     },
   });
 
@@ -220,7 +291,7 @@ export const formatJobEventLine = (event: HostedJobEvent) => {
 
 const startHostedRunner = async (options: CliOptions) => {
   const apiKey = requireValue(getOption(options, "api-key") ?? process.env.EXPOFACTO_API_KEY, "api-key");
-  const serviceUrl = getOption(options, "service-url") ?? getOption(options, "url") ?? process.env.FACTO_SERVICE_URL ?? "https://expofacto.dev";
+  const serviceUrl = getOption(options, "service-url") ?? getOption(options, "url") ?? hostedControllerUrl;
   const runnerName = getOption(options, "name") ?? process.env.FACTO_RUNNER_NAME ?? hostname();
   const workspaceRoot = getOption(options, "workspace") ?? process.env.FACTO_WORKSPACE_ROOT ?? ".facto-runner/workspaces";
   const pollIntervalMs = Number(getOption(options, "poll-interval-ms") ?? process.env.FACTO_POLL_INTERVAL_MS ?? 5000);
@@ -291,11 +362,7 @@ const main = async () => {
       console.log(`updated ${path}`);
     }
 
-    if (result.missing.length > 0) {
-      console.log(`fill in ${result.missing.join(", ")} in .expofacto/secrets.env`);
-    }
-
-    console.log("deploy with npm run deploy or .expofacto/deploy.sh");
+    console.log("deploy with npm run deploy or expofacto deploy");
     return;
   }
 
@@ -306,9 +373,9 @@ const main = async () => {
 
   if (command === "logs") {
     const jobId = requireValue(positional[1], "job-id");
-    const controllerUrl = requireValue(getOption(options, "controller-url") ?? process.env.FACTO_CONTROLLER_URL, "controller-url");
-    const token = requireValue(getApiToken(options), "token");
-    const result = await fetchJobLogs(controllerUrl, token, jobId);
+    const controllerUrl = getControllerUrl(options);
+    const apiKey = requireValue(getApiKey(options), "api-key or EXPOFACTO_API_KEY");
+    const result = await fetchJobLogs(controllerUrl, apiKey, jobId);
 
     for (const event of result.events) {
       console.log(formatJobEventLine(event));
@@ -317,14 +384,24 @@ const main = async () => {
     return;
   }
 
-  if (command !== "deploy" && (positional[0] !== "build" || positional[1] !== "ios")) {
+  if (command === "build" && positional.length > 1) {
+    throw new Error("Use expofacto build --platform ios instead of expofacto build ios");
+  }
+
+  if (command !== "deploy" && command !== "build") {
     throw new Error(usage.trim());
   }
 
-  const controllerUrl = requireValue(getOption(options, "controller-url") ?? process.env.FACTO_CONTROLLER_URL, "controller-url");
-  const token = requireValue(getApiToken(options), "token");
-  const result = await postJob(controllerUrl, token, createJobInput(options, { inferCurrentCommit: command === "deploy" }));
+  assertSupportedOptions(options, ["api-key", "controller-url", "platform", "profile", "auto-submit"]);
+
+  const controllerUrl = getControllerUrl(options);
+  const apiKey = requireValue(getApiKey(options), "api-key or EXPOFACTO_API_KEY");
+  const result = await postJob(controllerUrl, apiKey, createJobInput(options));
   console.log(`${controllerUrl.replace(/\/$/, "")}/api/jobs/${result.job.id}`);
+
+  if (result.warning) {
+    console.warn(result.warning);
+  }
 };
 
 main().catch((error) => {

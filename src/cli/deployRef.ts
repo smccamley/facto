@@ -33,7 +33,7 @@ export const resolveDeployGitRef = (options: {
   const commitSha = git(["rev-parse", "--verify", `${targetRef}^{commit}`]);
 
   if (!commitSha || !commitShaPattern.test(commitSha)) {
-    throw new Error(`Could not resolve Git ref ${targetRef} to a full commit SHA. Fetch it locally, or pass a commit SHA with --ref.`);
+    throw new Error(`Could not resolve Git ref ${targetRef} to a full commit SHA. Fetch it locally before queueing the build.`);
   }
 
   const fetchOutput = git(["fetch", "--quiet", "origin"]);

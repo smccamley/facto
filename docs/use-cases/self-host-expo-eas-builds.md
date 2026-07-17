@@ -2,7 +2,7 @@
 
 Use Expo Facto when you want Expo's app workflow but do not want every iOS binary built on Expo's remote build infrastructure.
 
-Expo Facto runs a controller and one or more Mac workers. The CLI submits a build job, the worker checks out the requested Git ref, runs your checks, runs `expo prebuild`, runs `eas build --local`, and stores the IPA path on completion.
+Expo Facto runs a hosted job queue and one or more Mac runners. The CLI submits a build job to Expo Facto, the runner checks out the requested Git ref, pulls readable EAS environment variables, runs your checks, runs `expo prebuild`, runs `eas build --local`, and stores the IPA path on completion.
 
 Before queueing, the CLI resolves the requested Git ref to a full pushed commit SHA. The worker validates `git`, `npm`, `npx`, and `npx --package eas-cli@latest eas` before checkout so missing tools fail early with actionable logs.
 
@@ -13,22 +13,17 @@ npm install @expofacto/cli
 npm run setup
 ```
 
-Fill `.expofacto/secrets.env`:
+Export the Expo Facto API key in your shell or CI environment:
 
 ```bash
-FACTO_CONTROLLER_URL=http://localhost:4100
-FACTO_API_TOKEN=your-controller-token
-EXPO_TOKEN=your-expo-token
+EXPOFACTO_API_KEY=facto_bX....qeLA
 ```
 
 Submit an iOS build:
 
 ```bash
-npx --package @expofacto/cli expofacto build ios \
-  --project my-app \
-  --repo git@github.com:OWNER/REPO.git \
-  --ref main \
-  --path . \
+npx --package @expofacto/cli expofacto build \
+  --platform ios \
   --profile production
 ```
 

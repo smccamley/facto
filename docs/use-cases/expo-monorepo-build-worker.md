@@ -1,6 +1,6 @@
 # Configure Expo Facto for a monorepo Expo app
 
-Expo Facto can build an Expo app inside a monorepo as long as the app path points at the package that owns the Expo project.
+Expo Facto can build an Expo app inside a monorepo when you run the command from the package that owns the Expo project.
 
 ## Example layout
 
@@ -14,28 +14,31 @@ repo/
       eas.json
 ```
 
-Set the app path in `.expofacto/config.yml`:
+From the app package:
 
-```yaml
-repo:
-  provider: github
-  url: "git@github.com:OWNER/REPO.git"
-  defaultRef: "main"
-app:
-  path: "packages/app"
-  packageManager: "npm"
-checks:
-  - npm run check
+```bash
+cd packages/app
+```
+
+Expo Facto infers the repo URL from `git remote get-url origin`, resolves the current pushed commit, and sends the app path as `packages/app`.
+
+Add `expofacto.json` only when the app needs Expo Facto-specific prebuild commands:
+
+```json
+{
+  "build": {
+    "ios": {
+      "prebuild": ["npm run check"]
+    }
+  }
+}
 ```
 
 Submit the build:
 
 ```bash
-npx --package @expofacto/cli expofacto build ios \
-  --project app \
-  --repo git@github.com:OWNER/REPO.git \
-  --ref main \
-  --path packages/app \
+npx --package @expofacto/cli expofacto build \
+  --platform ios \
   --profile production
 ```
 
@@ -43,4 +46,4 @@ The worker clones the repo root, then runs install, checks, prebuild, and local 
 
 ## Tip
 
-Pass an exact commit SHA with `--ref` when you need to prove which source was packaged.
+Commit and push the app state you want to build. Expo Facto resolves the current commit to a pushed SHA before creating the job.

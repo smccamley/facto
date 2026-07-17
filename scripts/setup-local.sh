@@ -27,16 +27,15 @@ write_if_missing() {
 
 mkdir -p "$FACTO_DIR"
 
-API_TOKEN="$(random_token)"
+API_KEY="$(random_token)"
 WORKER_TOKEN="$(random_token)"
 
-write_if_missing "$CONTROLLER_ENV" "FACTO_API_TOKEN=$API_TOKEN
+write_if_missing "$CONTROLLER_ENV" "EXPOFACTO_API_KEY=$API_KEY
 FACTO_WORKER_TOKEN=$WORKER_TOKEN
 FACTO_DATABASE_PATH=$FACTO_DIR/controller.sqlite
 FACTO_CONTROLLER_PORT=4100"
 
-write_if_missing "$WORKER_ENV" "FACTO_CONTROLLER_URL=http://localhost:4100
-FACTO_WORKER_TOKEN=$WORKER_TOKEN
+write_if_missing "$WORKER_ENV" "FACTO_WORKER_TOKEN=$WORKER_TOKEN
 FACTO_WORKER_NAME=local-worker
 FACTO_WORKSPACE_ROOT=$FACTO_DIR/workspaces
 

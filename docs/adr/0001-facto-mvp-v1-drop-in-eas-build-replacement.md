@@ -161,50 +161,28 @@ V1 should include a small CLI so app repos can trigger builds without knowing th
 Example:
 
 ```bash
-facto build ios \
-  --project ppl \
-  --repo git@github.com:OWNER/REPO.git \
-  --ref main \
-  --path packages/ppl \
+expofacto build \
+  --platform ios \
   --profile production \
-  --submit testflight
+  --auto-submit
 ```
 
 The CLI should print the job URL immediately.
 
 ## Project Configuration
 
-Facto should support both controller-stored project config and repository-local config. V1 may begin with controller-stored config for speed, but the intended app-facing format is `facto.yml`.
+Expo Facto should use Expo's existing project configuration wherever possible. `eas.json` remains the source of truth for build profiles, and the CLI infers repo URL, current commit, project name, and app path from the current Git checkout.
 
-Example `facto.yml`:
+The only repository-local Expo Facto config should be `expofacto.json`, used for behavior Expo does not model directly. In alpha, that means optional prebuild commands:
 
-```yaml
-version: 1
-project: ppl
-defaultPlatform: ios
-repo:
-  provider: github
-  defaultRef: main
-app:
-  path: packages/ppl
-  packageManager: npm
-ios:
-  profile: production
-  appStoreConnectAppId: "6788196898"
-  expectedBundleIdentifier: ppl.stuartmccamley.com
-  artifactPath: .facto/artifacts/ppl.ipa
-checks:
-  - npm run check
-env:
-  required:
-    - EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY
-    - EXPO_PUBLIC_OPEN_MEMORIES_API_URL
-    - OPEN_MEMORIES_CLERK_ENV
-secrets:
-  required:
-    - EXPO_TOKEN
-    - EXPO_APPLE_ID
-    - EXPO_APPLE_PASSWORD
+```json
+{
+  "build": {
+    "ios": {
+      "prebuild": ["npm run check", "npm run typecheck", "npm run test"]
+    }
+  }
+}
 ```
 
 For `PPL`, V1 can map from the existing environment expectations:
@@ -451,7 +429,7 @@ The Mac worker is trusted infrastructure. It will handle source code, signing ma
 V1 security decisions:
 
 - Only trusted repositories can create jobs.
-- The controller requires an API token for job creation.
+- The controller requires an Expo Facto API key for job creation.
 - Worker endpoints require a worker token.
 - The worker polls outbound; no public inbound API on the Mac.
 - Secrets are never sent to clients through job APIs.
@@ -525,7 +503,7 @@ Facto V1 is complete when:
 
 - Should V1 run the controller on a standalone cheap VPS or inside an existing Open Memories host?
 - Should the status page be private by shared token or placed behind Clerk from day one?
-- Should project config initially live in the controller database or in a repo-level `facto.yml`?
+- Should `expofacto.json` ever grow beyond Expo Facto-specific hooks, or should all build profile behavior stay in `eas.json`?
 - Should V1 use `eas submit` first or go directly to Fastlane/App Store Connect API key upload?
 - Should hourly Scaleway leasing be automated immediately, or should we begin with a monthly M4-S while build volume is high?
 

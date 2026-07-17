@@ -3,7 +3,7 @@ import test from "node:test";
 import { formatHttpError, formatRequestFailure, formatRunnerError } from "../dist/worker/runnerErrors.js";
 
 test("formatRunnerError returns a plain message without a stack trace", () => {
-  assert.equal(formatRunnerError(new Error("FACTO_API_KEY is required")), "FACTO_API_KEY is required");
+  assert.equal(formatRunnerError(new Error("EXPOFACTO_API_KEY is required")), "EXPOFACTO_API_KEY is required");
   assert.equal(formatRunnerError("plain failure"), "plain failure");
   assert.equal(formatRunnerError({ unexpected: true }), "Unknown runner error");
 });

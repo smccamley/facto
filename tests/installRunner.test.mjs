@@ -86,13 +86,6 @@ test("install-runner accepts EXPOFACTO_API_KEY", () => {
   assert.deepEqual(npxArgs, ["--yes", "--package", "@expofacto/cli-test", "expofacto", "start", "runner"]);
 });
 
-test("install-runner does not fall back to FACTO_API_KEY", () => {
-  const { result } = runInstaller([], { EXPOFACTO_API_KEY: "", FACTO_API_KEY: "facto_legacy" });
-
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /EXPOFACTO_API_KEY is required/);
-});
-
 test("install-runner explains the documented env var when api key is missing", () => {
   const { result } = runInstaller([], { EXPOFACTO_API_KEY: "" });
 

@@ -2,25 +2,15 @@
 
 Expo Facto can submit the IPA after a local iOS build by running EAS Submit from the Mac worker.
 
-## Configure submit
+## Submit With The EAS-Shaped Flag
 
-In `.expofacto/config.yml`:
-
-```yaml
-ios:
-  profile: production
-  submit: testflight
-```
-
-Or pass it on the command line:
+Use the same submit flag EAS uses:
 
 ```bash
-npx --package @expofacto/cli expofacto build ios \
-  --project my-app \
-  --repo git@github.com:OWNER/REPO.git \
-  --ref main \
+npx --package @expofacto/cli expofacto build \
+  --platform ios \
   --profile production \
-  --submit testflight
+  --auto-submit
 ```
 
 ## Required credentials

@@ -30,15 +30,15 @@ const sendHeartbeatUntilStopped = (client: ReturnType<typeof createControllerCli
 };
 
 const workLoop = async () => {
-  const controllerUrl = process.env.FACTO_CONTROLLER_URL;
+  const controllerUrl = "https://expofacto.dev";
   const workerToken = process.env.FACTO_WORKER_TOKEN;
   const workerName = process.env.FACTO_WORKER_NAME;
   const workspaceRoot = process.env.FACTO_WORKSPACE_ROOT ?? ".facto-worker/workspaces";
   const pollIntervalMs = Number(process.env.FACTO_POLL_INTERVAL_MS ?? 5000);
   const verbose = process.env.FACTO_VERBOSE === "1" || process.argv.includes("--verbose") || process.argv.includes("-V");
 
-  if (!controllerUrl || !workerToken || !workerName) {
-    throw new Error("FACTO_CONTROLLER_URL, FACTO_WORKER_TOKEN, and FACTO_WORKER_NAME are required");
+  if (!workerToken || !workerName) {
+    throw new Error("FACTO_WORKER_TOKEN and FACTO_WORKER_NAME are required");
   }
 
   mkdirSync(workspaceRoot, { recursive: true });

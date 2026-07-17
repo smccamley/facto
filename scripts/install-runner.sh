@@ -11,14 +11,14 @@ runner_args=()
 usage() {
   cat <<EOF
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/install-runner.sh | bash -s -- --api-key YOUR_FACTO_API_KEY
+  curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/install-runner.sh | bash -s -- --api-key EXPOFACTO_API_KEY
 
-  export EXPOFACTO_API_KEY=YOUR_FACTO_API_KEY
+  export EXPOFACTO_API_KEY=facto_bX....qeLA
   curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/install-runner.sh | bash
 
 Options:
-  -k, --api-key <key>      Facto hosted runner API key. Can also be EXPOFACTO_API_KEY.
-  --service-url <url>      Facto service URL. Can also be FACTO_SERVICE_URL.
+  -k, --api-key <key>      Expo Facto API key. Can also be EXPOFACTO_API_KEY.
+  --service-url <url>      Facto service URL for development. Defaults to https://expofacto.dev.
   --name <name>            Runner name. Can also be FACTO_RUNNER_NAME.
   --workspace <path>       Workspace root. Can also be FACTO_WORKSPACE_ROOT.
   --poll-interval-ms <ms>  Poll interval. Can also be FACTO_POLL_INTERVAL_MS.

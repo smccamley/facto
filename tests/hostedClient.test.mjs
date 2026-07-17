@@ -19,12 +19,16 @@ test("mapHostedJob converts hosted API jobs into worker jobs", () => {
     updated_at: "2026-07-12T10:01:00.000Z",
     leased_at: "2026-07-12T10:01:00.000Z",
     finished_at: null,
+    env: {
+      EXPO_TOKEN: "expo_test_token",
+    },
   });
 
   assert.equal(job.repoUrl, "git@github.com:example/app.git");
   assert.equal(job.gitRef, "main");
   assert.equal(job.appPath, "apps/mobile");
   assert.equal(job.submit, "testflight");
+  assert.equal(job.env.EXPO_TOKEN, "expo_test_token");
   assert.deepEqual(job.checks, []);
 });
 

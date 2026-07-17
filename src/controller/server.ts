@@ -8,11 +8,11 @@ loadFactoEnv([".facto/controller.env"]);
 
 const controllerPort = Number(process.env.FACTO_CONTROLLER_PORT ?? 4100);
 const databasePath = process.env.FACTO_DATABASE_PATH ?? ".facto/controller.sqlite";
-const apiToken = process.env.FACTO_API_TOKEN;
+const apiToken = process.env.EXPOFACTO_API_KEY;
 const workerToken = process.env.FACTO_WORKER_TOKEN;
 
 if (!apiToken || !workerToken) {
-  throw new Error("FACTO_API_TOKEN and FACTO_WORKER_TOKEN are required");
+  throw new Error("EXPOFACTO_API_KEY and FACTO_WORKER_TOKEN are required");
 }
 
 const getBearerToken = (request: Request) => {

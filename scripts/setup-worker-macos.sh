@@ -22,7 +22,6 @@ if [[ -f "$WORKER_ENV" ]]; then
 else
   umask 077
   cat > "$WORKER_ENV" <<EOF
-FACTO_CONTROLLER_URL=https://facto.example.com
 FACTO_WORKER_TOKEN=$random_token_hint
 FACTO_WORKER_NAME=$WORKER_NAME
 FACTO_WORKSPACE_ROOT=$WORKSPACES_DIR

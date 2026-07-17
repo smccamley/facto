@@ -57,7 +57,7 @@ test("deploy ref fails before queueing when current commit is not on origin", ()
   );
 });
 
-test("build ios resolves the configured ref to a pushed commit", () => {
+test("build resolves the configured ref to a pushed commit", () => {
   const sha = "1b2f430488ac300f115e265a8bd5a70f23f7d999";
 
   assert.equal(
@@ -74,7 +74,7 @@ test("build ios resolves the configured ref to a pushed commit", () => {
   );
 });
 
-test("build ios fails when the configured ref cannot resolve to a commit", () => {
+test("build fails when the configured ref cannot resolve to a commit", () => {
   assert.throws(
     () =>
       resolveDeployGitRef({

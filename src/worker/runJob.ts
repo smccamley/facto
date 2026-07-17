@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import type { BuildJob } from "../shared/jobTypes.js";
@@ -8,6 +8,13 @@ import { runCommand } from "./runCommand.js";
 type RunJobOptions = {
   signal?: AbortSignal;
   verbose?: boolean;
+};
+
+type EasBuildProfile = Record<string, unknown> & {
+  developmentClient?: unknown;
+  distribution?: unknown;
+  environment?: unknown;
+  extends?: unknown;
 };
 
 export type ToolchainCheck = {
@@ -52,6 +59,19 @@ export const easSubmitArgs = (job: Pick<BuildJob, "profile">, artifactPath: stri
   job.profile,
   "--path",
   artifactPath,
+  "--non-interactive",
+];
+
+const easEnvPullArgs = (environment: string, path: string) => [
+  "--yes",
+  "--package",
+  "eas-cli@latest",
+  "eas",
+  "env:pull",
+  "--environment",
+  environment,
+  "--path",
+  path,
   "--non-interactive",
 ];
 
@@ -148,6 +168,96 @@ const logLine = async (client: ControllerClient, job: BuildJob, step: string, li
   await client.sendEvent(job.id, { type: "log.line", step, line });
 };
 
+const parseEnvValue = (value: string) => {
+  const trimmed = value.trim();
+
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+};
+
+const parseEnvFile = (path: string) => {
+  if (!existsSync(path)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    readFileSync(path, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && line.includes("="))
+      .map((line) => {
+        const equalsIndex = line.indexOf("=");
+        return [line.slice(0, equalsIndex).trim(), parseEnvValue(line.slice(equalsIndex + 1))];
+      })
+  ) as NodeJS.ProcessEnv;
+};
+
+const profileRecord = (value: unknown): EasBuildProfile => {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as EasBuildProfile) : {};
+};
+
+const mergeProfiles = (base: EasBuildProfile, child: EasBuildProfile): EasBuildProfile => {
+  return { ...base, ...child };
+};
+
+const resolveBuildProfile = (profiles: Record<string, unknown>, profileName: string, seen: string[] = []): EasBuildProfile => {
+  if (seen.includes(profileName)) {
+    throw new Error(`Circular eas.json build profile extends chain: ${[...seen, profileName].join(" -> ")}`);
+  }
+
+  const profile = profileRecord(profiles[profileName]);
+
+  if (typeof profile.extends !== "string") {
+    return profile;
+  }
+
+  return mergeProfiles(resolveBuildProfile(profiles, profile.extends, [...seen, profileName]), profile);
+};
+
+export const resolveEasEnvironment = (appPath: string, profileName: string) => {
+  const easJsonPath = join(appPath, "eas.json");
+
+  if (!existsSync(easJsonPath)) {
+    return profileName === "development" || profileName === "preview" ? profileName : "production";
+  }
+
+  const easJson = JSON.parse(readFileSync(easJsonPath, "utf8")) as { build?: Record<string, unknown> };
+  const profile = resolveBuildProfile(easJson.build ?? {}, profileName);
+
+  if (typeof profile.environment === "string" && profile.environment.trim()) {
+    return profile.environment.trim();
+  }
+
+  if (profile.developmentClient === true) {
+    return "development";
+  }
+
+  if (profile.distribution === "internal" || profile.distribution === "simulator") {
+    return "preview";
+  }
+
+  if (profileName === "development" || profileName === "preview") {
+    return profileName;
+  }
+
+  return "production";
+};
+
+const loadEasEnvironment = async (client: ControllerClient, job: BuildJob, appPath: string, options: RunJobOptions = {}) => {
+  const environment = resolveEasEnvironment(appPath, job.profile);
+  const envPath = join(appPath, ".facto", "eas-env");
+
+  mkdirSync(dirname(envPath), { recursive: true });
+  await runStep(client, job, "environment", appPath, "npx", easEnvPullArgs(environment, envPath), job.env, options);
+
+  const env = parseEnvFile(envPath);
+  await logLine(client, job, "environment", `Loaded readable EAS environment variables for ${environment}`);
+  return env;
+};
+
 const checkoutAttempt = async (client: ControllerClient, job: BuildJob, repoPath: string, options: RunJobOptions = {}) => {
   const parentPath = resolve(repoPath, "..");
   mkdirSync(parentPath, { recursive: true });
@@ -197,16 +307,17 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
     await checkoutRepo(client, job, repoPath, options);
     const commitSha = await getCommitSha(client, job, repoPath);
     await logLine(client, job, "diagnostics", `cwd ${appPath}`);
-    await runStep(client, job, "install", appPath, "npm", ["ci"], undefined, options);
+    const easEnv = { ...job.env, ...(await loadEasEnvironment(client, job, appPath, options)) };
+    await runStep(client, job, "install", appPath, "npm", ["ci"], easEnv, options);
 
     for (const check of job.checks) {
       const { name, args } = commandForShell(check);
-      await runStep(client, job, "check", appPath, name, args, undefined, options);
+      await runStep(client, job, "check", appPath, name, args, easEnv, options);
     }
 
-    await runStep(client, job, "prebuild", appPath, "npx", ["expo", "prebuild", "--platform", "ios"], { CI: "1" }, options);
+    await runStep(client, job, "prebuild", appPath, "npx", ["expo", "prebuild", "--platform", "ios"], { ...easEnv, CI: "1" }, options);
     mkdirSync(dirname(artifactPath), { recursive: true });
-    await runStep(client, job, "build", appPath, "npx", easBuildArgs(job, artifactPath, { verbose: options.verbose }), undefined, options);
+    await runStep(client, job, "build", appPath, "npx", easBuildArgs(job, artifactPath, { verbose: options.verbose }), easEnv, options);
 
     if (existsSync(artifactPath)) {
       await client.registerArtifact(job.id, {
@@ -217,7 +328,7 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
     }
 
     if (job.submit === "testflight") {
-      await runStep(client, job, "submit", appPath, "npx", easSubmitArgs(job, artifactPath), undefined, options);
+      await runStep(client, job, "submit", appPath, "npx", easSubmitArgs(job, artifactPath), easEnv, options);
     }
 
     await client.sendEvent(job.id, { type: "job.finished", status: "complete", commitSha });

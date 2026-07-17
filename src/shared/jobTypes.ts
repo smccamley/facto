@@ -26,6 +26,7 @@ export type BuildJob = {
   profile: string;
   submit: SubmitTarget;
   checks: string[];
+  env?: Record<string, string>;
   status: JobState;
   currentStep: string | null;
   triggerSource: string;

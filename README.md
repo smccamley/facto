@@ -6,7 +6,7 @@
 
 Self-host Expo EAS iOS builds on Mac hardware you control.
 
-Expo is a great way to build native apps. Paying for every cloud build while you are iterating is the painful part. Expo Facto gives Expo apps a small controller, worker, and CLI for running the expensive iOS build step on your own Mac, then optionally submitting the IPA to TestFlight.
+Expo is a great way to build native apps. Paying for every cloud build while you are iterating is the painful part. Expo Facto gives Expo apps a hosted queue, runner, and CLI for running the expensive iOS build step on your own Mac, then optionally submitting the IPA to TestFlight.
 
 ## 30-Second Example
 
@@ -18,18 +18,13 @@ npm run setup
 npm run deploy
 ```
 
-Or submit a build job directly:
+Or submit a build job directly with `EXPOFACTO_API_KEY` set:
 
 ```bash
-npx --package @expofacto/cli expofacto build ios \
-  --controller-url http://localhost:4100 \
-  --token "$FACTO_API_TOKEN" \
-  --project my-app \
-  --repo git@github.com:OWNER/REPO.git \
-  --ref main \
-  --path packages/app \
+npx --package @expofacto/cli expofacto build \
+  --platform ios \
   --profile production \
-  --submit testflight
+  --auto-submit
 ```
 
 Result: an iOS IPA built with `eas build --local` on your Mac worker instead of Expo's remote build infrastructure.
@@ -37,10 +32,10 @@ Result: an iOS IPA built with `eas build --local` on your Mac worker instead of 
 ## Why Engineers Use It
 
 - **Avoid paid remote build minutes.** Keep Expo, but move iOS build compute onto your hardware.
-- **Works with real Expo apps.** The worker runs install, checks, prebuild, local EAS build, and optional EAS Submit.
+- **Works with real Expo apps.** The worker loads readable EAS environment variables, runs install, checks, prebuild, local EAS build, and optional EAS Submit.
 - **Good for frequent iteration.** Build as often as your Mac can handle while testing app binaries on devices.
-- **Drop-in app setup.** `npm run setup` creates `.expofacto/config.yml`, `.expofacto/secrets.env`, and deploy scripts.
-- **Plain infrastructure.** A Node controller, a polling worker, SQLite job state, and pinned Git commits.
+- **Drop-in app setup.** `npm run setup` creates package scripts without adding an Expo Facto folder.
+- **Plain infrastructure.** A hosted job queue, polling runners, usage logs, and pinned Git commits.
 
 ## What It Solves
 
@@ -59,7 +54,7 @@ Install:
 npm install @expofacto/cli
 ```
 
-The postinstall step adds safe ignore rules for local secrets and artifacts, creates `.expofacto/deploy.sh`, and adds package scripts when they do not already exist.
+The postinstall step adds package scripts when they do not already exist.
 
 Run setup:
 
@@ -67,13 +62,19 @@ Run setup:
 npm run setup
 ```
 
-Setup creates:
+Set `EXPOFACTO_API_KEY` in your shell or CI environment before deploying.
 
-- `.expofacto/config.yml`
-- `.expofacto/secrets.env`
-- `.expofacto/deploy.sh`
+Expo Facto reads the same `eas.json` profiles as Expo. Add `expofacto.json` only when you need Expo Facto-specific commands before `expo prebuild`:
 
-Fill any missing `FACTO_CONTROLLER_URL`, `FACTO_API_TOKEN`, and `EXPO_TOKEN` values before deploying.
+```json
+{
+  "build": {
+    "ios": {
+      "prebuild": ["npm run check", "npm run typecheck", "npm run test"]
+    }
+  }
+}
+```
 
 Deploy:
 
@@ -81,43 +82,16 @@ Deploy:
 npm run deploy
 ```
 
-`FACTO_API_TOKEN` is the local controller bearer token used by `deploy`, `build ios`, and local controller job creation. Hosted runner registration uses a separate dashboard API key: pass it with `--api-key`, or set `EXPOFACTO_API_KEY` before running the hosted runner installer.
+`EXPOFACTO_API_KEY` is the Expo Facto API key used by `deploy`, `build`, log reads, and runner registration. API keys are shown once in the dashboard, and any valid key for the account can submit jobs or start a runner.
 
 Read hosted job events:
 
 ```bash
 npx --package @expofacto/cli expofacto logs JOB_ID \
-  --controller-url https://expofacto.dev \
-  --token YOUR_DASHBOARD_API_KEY
+  --api-key "$EXPOFACTO_API_KEY"
 ```
 
 The `logs` command reads `GET /api/jobs/:jobId/events` and prints the recorded build events in timestamp order.
-
-## Local Controller And Worker
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Create local env files:
-
-```bash
-npm run setup:local
-```
-
-Run the controller:
-
-```bash
-FACTO_ENV_FILE=.facto/controller.env npm run dev:controller
-```
-
-Run a worker in another terminal:
-
-```bash
-FACTO_ENV_FILE=.facto/worker.env npm run dev:worker
-```
 
 Run the macOS runner preflight by itself:
 
@@ -128,18 +102,16 @@ npm run preflight:runner -- --verbose
 Run a hosted macOS runner from a clean machine with the API key inline:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/install-runner.sh | bash -s -- --api-key YOUR_FACTO_API_KEY
+curl -fsSL https://raw.githubusercontent.com/smccamley/facto/main/install-runner.sh | bash -s -- --api-key EXPOFACTO_API_KEY
 ```
 
 You can omit `--api-key` if `EXPOFACTO_API_KEY` is set:
 
 ```bash
-export EXPOFACTO_API_KEY=YOUR_FACTO_API_KEY
+export EXPOFACTO_API_KEY=facto_bX....qeLA
 ```
 
 The installer creates `~/facto-runner`, checks for Node.js 24+ and `npx`, installs nvm and Node.js when they are missing, then starts the hosted runner. `expofacto start runner` runs the macOS preflight before polling for jobs. The preflight reads [docs/runner-toolchain.md](docs/runner-toolchain.md), installs missing Homebrew tools, repairs Xcode only when it is missing or too old, verifies GitHub access and the iOS SDK, and leaves already-working tools alone. Each leased job also validates `git`, `npm`, `npx`, and the `npx --package eas-cli@latest eas` entrypoint before checkout starts. App Store Connect credentials are checked when a job needs them. Set `XCODES_USERNAME` and `XCODES_PASSWORD` for unattended Xcode installs. Add `--verbose` to the installer command to mirror redacted build output to the runner terminal as well as the controller logs.
-
-Open `http://localhost:4100` for the operational status page.
 
 ## Compatibility
 
@@ -151,7 +123,7 @@ Open `http://localhost:4100` for the operational status page.
 | Build mode | `eas build --local` |
 | Submit mode | Optional `eas submit` to TestFlight |
 | Worker OS | macOS with Xcode and Apple signing access |
-| Package managers | npm by default; generated config can be edited |
+| Package managers | npm |
 
 ## Trust And Package Quality
 
@@ -159,7 +131,7 @@ Open `http://localhost:4100` for the operational status page.
 - MIT license.
 - CI runs install, typecheck, tests, build, and package preview.
 - npm publishes from GitHub Actions with provenance.
-- Minimal runtime dependencies: `express` and `yaml`.
+- Minimal runtime dependencies.
 - Secrets are loaded from env files and redacted from worker logs.
 
 See [docs/secrets.md](docs/secrets.md) for credential setup and storage.
