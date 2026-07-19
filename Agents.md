@@ -9,6 +9,8 @@ contracts is part of this repo's working rules.
 # Deploy Commit Push and Pull
 
 Use GITHUB_PERSONAL_ACCESS_TOKEN in .env
+For GitHub CLI/API work, export it as GH_TOKEN for the command. Do not rely on
+machine-level `gh auth login`; this machine is not expected to be logged in.
 use NPM_TOKEN_EXPOFACTO in .env
 
 ## Deployment Rule
