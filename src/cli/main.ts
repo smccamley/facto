@@ -5,6 +5,7 @@ import { hostname } from "node:os";
 import { basename, relative, sep } from "node:path";
 import { loadFactoEnv } from "../shared/envFile.js";
 import type { CreateJobInput } from "../shared/jobTypes.js";
+import { postBuildTelemetry } from "../shared/telemetry.js";
 import { resolveDeployGitRef } from "./deployRef.js";
 import { setupProject } from "./projectSetup.js";
 import { runJob } from "../worker/runJob.js";
@@ -488,6 +489,12 @@ const main = async () => {
   const controllerUrl = getControllerUrl(options);
   const apiKey = requireValue(getApiKey(options), "api-key or EXPOFACTO_API_KEY");
   const result = await postJob(controllerUrl, apiKey, createJobInput(options));
+  void postBuildTelemetry({
+    command,
+    eventType: "build.triggered",
+    jobId: result.job.id,
+    source: "cli",
+  });
   console.log(`${controllerUrl.replace(/\/$/, "")}/api/jobs/${result.job.id}`);
 
   if (result.warning) {

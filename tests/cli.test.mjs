@@ -12,7 +12,13 @@ const cliPath = join(packageRoot, "dist/cli/main.js");
 
 const runNode = (args, options) =>
   new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, options);
+    const child = spawn(process.execPath, args, {
+      ...options,
+      env: {
+        EXPOFACTO_TELEMETRY_DISABLED: "1",
+        ...options.env,
+      },
+    });
     let stdout = "";
     let stderr = "";
 

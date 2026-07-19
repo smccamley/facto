@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import type { BuildJob } from "../shared/jobTypes.js";
+import { postBuildTelemetry } from "../shared/telemetry.js";
 import type { ControllerClient } from "./controllerClient.js";
 import { runCommand } from "./runCommand.js";
 
@@ -296,6 +297,11 @@ export const runJob = async (client: ControllerClient, job: BuildJob, workspaceR
       console.log(`[${job.id}] leased ${job.project} ${job.gitRef}`);
     }
 
+    void postBuildTelemetry({
+      eventType: "build.runner_started",
+      jobId: job.id,
+      source: "runner",
+    });
     mkdirSync(workspaceRoot, { recursive: true });
     await validateJobToolchain(client, job, workspaceRoot, options);
     await checkoutRepo(client, job, repoPath, options);

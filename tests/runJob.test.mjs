@@ -5,6 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { easBuildArgs, easCliBinPath, easCliInstallArgs, easSubmitArgs, jobToolchainChecks, resolveEasEnvironment, runJob } from "../dist/worker/runJob.js";
 
+process.env.EXPOFACTO_TELEMETRY_DISABLED = "1";
+
 const writeExecutable = (path, contents) => {
   writeFileSync(path, contents);
   chmodSync(path, 0o755);

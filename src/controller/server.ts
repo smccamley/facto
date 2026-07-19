@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from "express";
 import { loadFactoEnv } from "../shared/envFile.js";
+import { postBuildTelemetry } from "../shared/telemetry.js";
 import { openControllerDatabase } from "./database.js";
 import { createJobStore } from "./jobStore.js";
 import { renderStatusPage, toLogLines } from "./statusPage.js";
@@ -61,6 +62,7 @@ app.get("/", (_request, response) => {
 app.post("/api/jobs", requireToken(apiToken), (request, response) => {
   try {
     const body = request.body as Record<string, unknown>;
+    const triggerSource = typeof body.triggerSource === "string" ? body.triggerSource : "api";
     const createdJob = jobs.createJob({
       project: requireString(body, "project"),
       platform: "ios",
@@ -70,9 +72,15 @@ app.post("/api/jobs", requireToken(apiToken), (request, response) => {
       profile: typeof body.profile === "string" ? body.profile : "production",
       submit: body.submit === "testflight" ? "testflight" : "none",
       checks: Array.isArray(body.checks) ? body.checks.map(String) : undefined,
-      triggerSource: typeof body.triggerSource === "string" ? body.triggerSource : "api",
+      triggerSource,
     });
 
+    void postBuildTelemetry({
+      command: triggerSource,
+      eventType: "build.controller_triggered",
+      jobId: createdJob.id,
+      source: "local-controller",
+    });
     response.status(201).json({ job: createdJob, url: `/api/jobs/${createdJob.id}` });
   } catch (error) {
     response.status(400).json({ error: error instanceof Error ? error.message : "Invalid job" });
